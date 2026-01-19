@@ -38,6 +38,7 @@ import type {
 import { DEFAULTS } from '../shared/defaults.js'
 import { GitStatusManager } from './GitStatusManager.js'
 import { ProjectsManager } from './ProjectsManager.js'
+import { detectProjectName } from './projectDetector.js'
 import { fileURLToPath } from 'url'
 
 // ============================================================================
@@ -778,42 +779,48 @@ function shortId(): string {
 /**
  * Create a new managed session
  */
-function createSession(options: CreateSessionRequest = {}): Promise<ManagedSession> {
+async function createSession(options: CreateSessionRequest = {}): Promise<ManagedSession> {
+  const id = randomUUID()
+  sessionCounter++
+  const tmuxSession = `vibecraft-${shortId()}`
+
+  // Validate cwd to prevent command injection
+  const cwd = validateDirectoryPath(options.cwd || process.cwd())
+
+  // Detect project name from cwd (for auto-naming and display)
+  let projectInfo: Awaited<ReturnType<typeof detectProjectName>> | null = null
+  try {
+    projectInfo = await detectProjectName(cwd)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    log(`Error detecting project name for cwd "${cwd}": ${message}`)
+    // Continue with null projectInfo rather than failing session creation
+  }
+
+  // Use user-provided name, or detected project name, or fallback to counter
+  const name = options.name || projectInfo?.name || `Claude ${sessionCounter}`
+
+  // Build claude command with flags
+  const flags = options.flags || {}
+  const claudeArgs: string[] = []
+
+  // Defaults: continue=true, skipPermissions=true, chrome=false
+  if (flags.continue !== false) {
+    claudeArgs.push('-c')
+  }
+  if (flags.skipPermissions !== false) {
+    // --permission-mode=bypassPermissions skips the workspace trust dialog
+    // --dangerously-skip-permissions skips tool permission prompts
+    claudeArgs.push('--permission-mode=bypassPermissions')
+    claudeArgs.push('--dangerously-skip-permissions')
+  }
+  if (flags.chrome) {
+    claudeArgs.push('--chrome')
+  }
+
+  const claudeCmd = claudeArgs.length > 0 ? `claude ${claudeArgs.join(' ')}` : 'claude'
+
   return new Promise((resolve, reject) => {
-    const id = randomUUID()
-    sessionCounter++
-    const name = options.name || `Claude ${sessionCounter}`
-    const tmuxSession = `vibecraft-${shortId()}`
-
-    // Validate cwd to prevent command injection
-    let cwd: string
-    try {
-      cwd = validateDirectoryPath(options.cwd || process.cwd())
-    } catch (err) {
-      reject(err)
-      return
-    }
-
-    // Build claude command with flags
-    const flags = options.flags || {}
-    const claudeArgs: string[] = []
-
-    // Defaults: continue=true, skipPermissions=true, chrome=false
-    if (flags.continue !== false) {
-      claudeArgs.push('-c')
-    }
-    if (flags.skipPermissions !== false) {
-      // --permission-mode=bypassPermissions skips the workspace trust dialog
-      // --dangerously-skip-permissions skips tool permission prompts
-      claudeArgs.push('--permission-mode=bypassPermissions')
-      claudeArgs.push('--dangerously-skip-permissions')
-    }
-    if (flags.chrome) {
-      claudeArgs.push('--chrome')
-    }
-
-    const claudeCmd = claudeArgs.length > 0 ? `claude ${claudeArgs.join(' ')}` : 'claude'
-
     // Spawn tmux session with claude using execFile to prevent shell injection
     // Arguments are passed as array, not interpolated into a shell string
     execFile('tmux', [
@@ -837,10 +844,12 @@ function createSession(options: CreateSessionRequest = {}): Promise<ManagedSessi
         createdAt: Date.now(),
         lastActivity: Date.now(),
         cwd,
+        projectName: projectInfo?.name,
+        projectSource: projectInfo?.source,
       }
 
       managedSessions.set(id, session)
-      log(`Created session: ${name} (${id.slice(0, 8)}) -> tmux:${tmuxSession} cmd:'${claudeCmd}'`)
+      log(`Created session: ${name} (${id.slice(0, 8)}) -> tmux:${tmuxSession} project:${projectInfo?.name ?? 'unknown'} (${projectInfo?.source ?? 'none'})`)
 
       // Track git status for this session
       if (cwd) {

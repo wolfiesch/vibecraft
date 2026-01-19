@@ -11,6 +11,7 @@ import { registerSubagentHandlers } from './subagentHandlers'
 import { registerZoneHandlers } from './zoneHandlers'
 import { registerFeedHandlers } from './feedHandlers'
 import { registerAnimationHandlers } from './animationHandlers'
+import { registerCommitHandlers } from './commitHandlers'
 
 /**
  * Register all EventBus handlers
@@ -24,6 +25,7 @@ export function registerAllHandlers(): void {
   registerZoneHandlers()
   registerFeedHandlers()
   registerAnimationHandlers()
+  registerCommitHandlers()
 }
 
 // Re-export individual registrations for testing
@@ -35,4 +37,12 @@ export {
   registerZoneHandlers,
   registerFeedHandlers,
   registerAnimationHandlers,
+  registerCommitHandlers,
 }
+
+// Re-export commit handler configuration for main.ts
+export {
+  configureCommitHandlers,
+  setConfettiEnabled,
+  updateConfetti,
+} from './commitHandlers'

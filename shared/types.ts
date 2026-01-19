@@ -263,6 +263,9 @@ export interface TaskToolInput {
 /** Status of a managed Claude session */
 export type SessionStatus = 'idle' | 'working' | 'waiting' | 'offline'
 
+/** Source of auto-detected project name */
+export type ProjectNameSource = 'package.json' | 'pyproject.toml' | 'git-remote' | 'directory'
+
 /** A managed Claude session */
 export interface ManagedSession {
   /** Our internal ID (UUID) */
@@ -295,6 +298,10 @@ export interface ManagedSession {
     q: number
     r: number
   }
+  /** Auto-detected project name (from package.json, pyproject.toml, git remote, or directory) */
+  projectName?: string
+  /** Source of the detected project name */
+  projectSource?: ProjectNameSource
   /** Whether this is an implicit session (external Claude, no tmux control) */
   implicit?: boolean
 }

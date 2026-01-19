@@ -14,7 +14,7 @@ import { Claude } from './entities/ClaudeMon'      // Robot buddy character
 import { SubagentManager } from './entities/SubagentManager'
 import { EventClient } from './events/EventClient'
 import { eventBus, type EventContext, type EventType } from './events/EventBus'
-import { registerAllHandlers } from './events/handlers'
+import { registerAllHandlers, configureCommitHandlers, updateConfetti } from './events/handlers'
 import {
   type ClaudeEvent,
   type PreToolUseEvent,
@@ -1442,9 +1442,12 @@ function getOrCreateSession(sessionId: string, eventCwd?: string): SessionState 
 
   if (linkedManagedSession) {
     // Update the zone label with the managed session name and keybind
+    // Use projectName for display, branch from gitStatus
     const keybindIndex = state.managedSessions.indexOf(linkedManagedSession)
     const keybind = keybindIndex >= 0 ? getSessionKeybind(keybindIndex) : undefined
-    state.scene.updateZoneLabel(sessionId, linkedManagedSession.name, keybind)
+    const labelName = linkedManagedSession.projectName || linkedManagedSession.name
+    const branch = linkedManagedSession.gitStatus?.branch
+    state.scene.updateZoneLabel(sessionId, labelName, keybind, branch)
     console.log(`Linked Claude session ${sessionId.slice(0, 8)} to "${linkedManagedSession.name}"`)
 
     // Save zone position to server if not already saved
@@ -1567,6 +1570,7 @@ function createImplicitManagedSession(claudeSessionId: string, cwd?: string): Ma
 /**
  * Sync zone labels with managed session names
  * Uses explicit links first, then falls back to index matching
+ * Labels show: "branch · projectName" (branch first since it changes most often)
  */
 function syncZoneLabels(): void {
   if (!state.scene) return
@@ -1579,7 +1583,9 @@ function syncZoneLabels(): void {
     const managed = managedSessions[i]
     if (managed.claudeSessionId) {
       const keybind = getSessionKeybind(i)
-      state.scene.updateZoneLabel(managed.claudeSessionId, managed.name, keybind)
+      const labelName = managed.projectName || managed.name
+      const branch = managed.gitStatus?.branch
+      state.scene.updateZoneLabel(managed.claudeSessionId, labelName, keybind, branch)
     }
   }
 
@@ -1601,7 +1607,9 @@ function syncZoneLabels(): void {
     // Update the zone label with keybind
     const managedIndex = managedSessions.indexOf(managed)
     const keybind = managedIndex >= 0 ? getSessionKeybind(managedIndex) : undefined
-    state.scene.updateZoneLabel(zoneId, managed.name, keybind)
+    const labelName = managed.projectName || managed.name
+    const branch = managed.gitStatus?.branch
+    state.scene.updateZoneLabel(zoneId, labelName, keybind, branch)
 
     // Also create the link for future use
     claudeToManagedLink.set(zoneId, managed.id)
@@ -2656,6 +2664,25 @@ function init() {
   // Register EventBus handlers (decoupled event handling)
   registerAllHandlers()
 
+  // Configure commit celebration handlers (confetti + achievement toast)
+  configureCommitHandlers({
+    scene: state.scene.scene,
+    getZonePosition: (sessionId: string) => {
+      const zone = state.scene?.zones.get(sessionId)
+      if (!zone) return null
+      return new THREE.Vector3(zone.position.x, zone.elevation || 0, zone.position.z)
+    },
+    getProjectName: (sessionId: string) => {
+      const managed = state.managedSessions.find(m => m.claudeSessionId === sessionId)
+      return managed?.projectName
+    },
+  })
+
+  // Hook confetti updates into render loop
+  state.scene.onRender((delta) => {
+    updateConfetti(delta)
+  })
+
   // Connect to event server
   state.client = new EventClient({
     url: WS_URL,
@@ -2770,10 +2797,12 @@ function init() {
           }
           state.sessions.set(session.claudeSessionId, sessionState)
 
-          // Update zone label with session name
+          // Update zone label with session name, project, and branch
           const keybindIndex = sessions.indexOf(session)
           const keybind = keybindIndex >= 0 ? getSessionKeybind(keybindIndex) : undefined
-          state.scene.updateZoneLabel(session.claudeSessionId, session.name, keybind)
+          const labelName = session.projectName || session.name
+          const branch = session.gitStatus?.branch
+          state.scene.updateZoneLabel(session.claudeSessionId, labelName, keybind, branch)
         }
 
         // Update zone floor status based on session status

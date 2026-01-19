@@ -685,25 +685,50 @@ class SoundManager {
     // === SPECIAL COMMANDS ===
 
     git_commit: () => {
-      // Git commit - satisfying "saved" fanfare with harmonic resolution
-      // Major chord arpeggio ascending then resolving (G→B→D→G)
+      // Git commit - EPIC celebration fanfare!
+      // Sub-bass hit + Major chord arpeggio (G→B→D→G) + rich shimmer + sparkle trail
+
+      // Sub-bass hit (foundation)
+      const bass = this.createDisposableSynth(
+        { type: 'sine', attack: 0.01, decay: 0.4, sustain: 0, release: 0.3 },
+        VOL.NORMAL
+      )
+      bass.triggerAttackRelease('G1', '4n')
+
+      // Main arpeggio chord (G major ascending)
       const synth = this.createDisposablePolySynth(
-        { type: 'triangle', attack: 0.02, decay: 0.25, sustain: 0.15, release: 0.4 },
+        { type: 'triangle', attack: 0.02, decay: 0.3, sustain: 0.2, release: 0.5 },
         VOL.PROMINENT,
-        1200
+        2000
       )
       const now = Tone.now()
       synth.triggerAttackRelease('G3', '8n', now)
       synth.triggerAttackRelease('B3', '8n', now + 0.08)
       synth.triggerAttackRelease('D4', '8n', now + 0.16)
-      synth.triggerAttackRelease('G4', '4n', now + 0.24)  // Hold the resolution
+      synth.triggerAttackRelease('G4', '4n', now + 0.24)  // Resolution
 
-      // Subtle shimmer on top
-      const shimmer = this.createDisposableSynth(
-        { type: 'sine', attack: 0.1, decay: 0.3, sustain: 0, release: 0.3 },
-        VOL.QUIET
+      // Add the 5th for richer chord (D5)
+      synth.triggerAttackRelease('D5', '4n', now + 0.28)
+
+      // Rich shimmer layer (warmer, longer)
+      const shimmer = this.createDisposablePolySynth(
+        { type: 'sine', attack: 0.15, decay: 0.5, sustain: 0.1, release: 0.6 },
+        VOL.QUIET,
+        1800
       )
-      setTimeout(() => shimmer.triggerAttackRelease('D5', '8n'), 300)
+      setTimeout(() => {
+        shimmer.triggerAttackRelease(['D5', 'G5'], '4n')
+      }, 280)
+
+      // Sparkle trail (high sine arpeggios)
+      const sparkle = this.createDisposableSynth(
+        { type: 'sine', attack: 0.01, decay: 0.08, sustain: 0, release: 0.1 },
+        VOL.QUIET - 4
+      )
+      const sparkleNotes = ['G5', 'B5', 'D6', 'G6']
+      sparkleNotes.forEach((note, i) => {
+        setTimeout(() => sparkle.triggerAttackRelease(note, '64n'), 400 + i * 60)
+      })
     },
 
     // === DRAW MODE ===

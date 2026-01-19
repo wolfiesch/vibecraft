@@ -1432,10 +1432,14 @@ export class WorkshopScene {
   /**
    * Update the floating label for a zone
    * @param keybind - Optional keybind string (1-6, Q-Y, A-H, Z-N) to show as badge
+   * @param branch - Optional git branch name to display before the project name
    */
-  updateZoneLabel(sessionId: string, newLabel: string, keybind?: string): void {
+  updateZoneLabel(sessionId: string, newLabel: string, keybind?: string, branch?: string): void {
     const zone = this.zones.get(sessionId)
     if (!zone || !zone.label) return
+
+    // Format label: "branch · project" or just "project"
+    const displayLabel = branch ? `${branch} · ${newLabel}` : newLabel
 
     // Redraw the label with new text using shared drawing function
     const canvas = document.createElement('canvas')
@@ -1443,7 +1447,7 @@ export class WorkshopScene {
     canvas.width = 512
     canvas.height = 96
 
-    this.drawLabelShape(ctx, canvas.width, canvas.height, zone.color, newLabel, keybind)
+    this.drawLabelShape(ctx, canvas.width, canvas.height, zone.color, displayLabel, keybind)
 
     // Update texture
     const material = zone.label.material as THREE.SpriteMaterial
