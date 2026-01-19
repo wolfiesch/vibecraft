@@ -7,12 +7,39 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-HOOK_SCRIPT="$SCRIPT_DIR/vibecraft-hook.sh"
+
+# Prefer Rust binary if available, otherwise fall back to bash script
+ARCH=$(uname -m)
+OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+
+HOOK_PATH=""
+if [ "$OS" = "darwin" ]; then
+  if [ -f "$SCRIPT_DIR/bin/vibecraft-hook-darwin-universal" ]; then
+    HOOK_PATH="$SCRIPT_DIR/bin/vibecraft-hook-darwin-universal"
+  elif [ "$ARCH" = "arm64" ] && [ -f "$SCRIPT_DIR/bin/vibecraft-hook-darwin-arm64" ]; then
+    HOOK_PATH="$SCRIPT_DIR/bin/vibecraft-hook-darwin-arm64"
+  elif [ "$ARCH" = "x86_64" ] && [ -f "$SCRIPT_DIR/bin/vibecraft-hook-darwin-x64" ]; then
+    HOOK_PATH="$SCRIPT_DIR/bin/vibecraft-hook-darwin-x64"
+  fi
+elif [ "$OS" = "linux" ] && [ "$ARCH" = "x86_64" ]; then
+  if [ -f "$SCRIPT_DIR/bin/vibecraft-hook-linux-x64" ]; then
+    HOOK_PATH="$SCRIPT_DIR/bin/vibecraft-hook-linux-x64"
+  fi
+fi
+
+# Fall back to bash script
+if [ -z "$HOOK_PATH" ]; then
+  HOOK_PATH="$SCRIPT_DIR/vibecraft-hook.sh"
+  HOOK_TYPE="bash script"
+else
+  HOOK_TYPE="Rust binary (7-10x faster)"
+fi
 
 echo "Vibecraft Hooks Configuration Generator"
 echo "======================================="
 echo ""
-echo "Hook script location: $HOOK_SCRIPT"
+echo "Hook type: $HOOK_TYPE"
+echo "Hook location: $HOOK_PATH"
 echo ""
 echo "Add the following to your ~/.claude/settings.json:"
 echo ""
@@ -23,43 +50,43 @@ cat << EOF
     "PreToolUse": [
       {
         "matcher": "*",
-        "hooks": [{"type": "command", "command": "$HOOK_SCRIPT", "timeout": 5}]
+        "hooks": [{"type": "command", "command": "$HOOK_PATH", "timeout": 5}]
       }
     ],
     "PostToolUse": [
       {
         "matcher": "*",
-        "hooks": [{"type": "command", "command": "$HOOK_SCRIPT", "timeout": 5}]
+        "hooks": [{"type": "command", "command": "$HOOK_PATH", "timeout": 5}]
       }
     ],
     "Stop": [
       {
-        "hooks": [{"type": "command", "command": "$HOOK_SCRIPT", "timeout": 5}]
+        "hooks": [{"type": "command", "command": "$HOOK_PATH", "timeout": 5}]
       }
     ],
     "SubagentStop": [
       {
-        "hooks": [{"type": "command", "command": "$HOOK_SCRIPT", "timeout": 5}]
+        "hooks": [{"type": "command", "command": "$HOOK_PATH", "timeout": 5}]
       }
     ],
     "SessionStart": [
       {
-        "hooks": [{"type": "command", "command": "$HOOK_SCRIPT", "timeout": 5}]
+        "hooks": [{"type": "command", "command": "$HOOK_PATH", "timeout": 5}]
       }
     ],
     "SessionEnd": [
       {
-        "hooks": [{"type": "command", "command": "$HOOK_SCRIPT", "timeout": 5}]
+        "hooks": [{"type": "command", "command": "$HOOK_PATH", "timeout": 5}]
       }
     ],
     "UserPromptSubmit": [
       {
-        "hooks": [{"type": "command", "command": "$HOOK_SCRIPT", "timeout": 5}]
+        "hooks": [{"type": "command", "command": "$HOOK_PATH", "timeout": 5}]
       }
     ],
     "Notification": [
       {
-        "hooks": [{"type": "command", "command": "$HOOK_SCRIPT", "timeout": 5}]
+        "hooks": [{"type": "command", "command": "$HOOK_PATH", "timeout": 5}]
       }
     ]
   }

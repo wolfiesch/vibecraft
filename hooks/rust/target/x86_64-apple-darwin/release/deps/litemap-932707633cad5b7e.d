@@ -1,0 +1,10 @@
+/Users/wolfgangschoenberger/Projects/vibecraft/hooks/rust/target/x86_64-apple-darwin/release/deps/litemap-932707633cad5b7e.d: /Users/wolfgangschoenberger/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/litemap-0.8.1/src/lib.rs /Users/wolfgangschoenberger/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/litemap-0.8.1/src/map.rs /Users/wolfgangschoenberger/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/litemap-0.8.1/src/store/mod.rs /Users/wolfgangschoenberger/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/litemap-0.8.1/src/store/slice_impl.rs
+
+/Users/wolfgangschoenberger/Projects/vibecraft/hooks/rust/target/x86_64-apple-darwin/release/deps/liblitemap-932707633cad5b7e.rlib: /Users/wolfgangschoenberger/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/litemap-0.8.1/src/lib.rs /Users/wolfgangschoenberger/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/litemap-0.8.1/src/map.rs /Users/wolfgangschoenberger/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/litemap-0.8.1/src/store/mod.rs /Users/wolfgangschoenberger/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/litemap-0.8.1/src/store/slice_impl.rs
+
+/Users/wolfgangschoenberger/Projects/vibecraft/hooks/rust/target/x86_64-apple-darwin/release/deps/liblitemap-932707633cad5b7e.rmeta: /Users/wolfgangschoenberger/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/litemap-0.8.1/src/lib.rs /Users/wolfgangschoenberger/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/litemap-0.8.1/src/map.rs /Users/wolfgangschoenberger/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/litemap-0.8.1/src/store/mod.rs /Users/wolfgangschoenberger/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/litemap-0.8.1/src/store/slice_impl.rs
+
+/Users/wolfgangschoenberger/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/litemap-0.8.1/src/lib.rs:
+/Users/wolfgangschoenberger/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/litemap-0.8.1/src/map.rs:
+/Users/wolfgangschoenberger/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/litemap-0.8.1/src/store/mod.rs:
+/Users/wolfgangschoenberger/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/litemap-0.8.1/src/store/slice_impl.rs:

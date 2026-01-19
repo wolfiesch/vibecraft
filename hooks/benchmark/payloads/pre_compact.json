@@ -1,0 +1,7 @@
+{
+  "hook_event_name": "PreCompact",
+  "session_id": "test-session-12345",
+  "cwd": "/Users/test/Projects/myapp",
+  "trigger": "auto",
+  "custom_instructions": "Remember to preserve the project context and recent decisions about the auth refactor."
+}

@@ -1,0 +1,10 @@
+[
+  {
+    "session_id": "7c2bb6f9-5b81-4ab5-9092-d504eb174cc3",
+    "transcript_path": "/Users/wolfgangschoenberger/.claude/projects/-Users-wolfgangschoenberger-Projects-vibecraft/7c2bb6f9-5b81-4ab5-9092-d504eb174cc3.jsonl",
+    "cwd": "/Users/wolfgangschoenberger/Projects/vibecraft/hooks/rust",
+    "permission_mode": "bypassPermissions",
+    "hook_event_name": "UserPromptSubmit",
+    "prompt": "commit these changes"
+  }
+]

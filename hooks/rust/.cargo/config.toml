@@ -1,0 +1,13 @@
+# Cross-compilation configuration for vibecraft-hook
+#
+# This enables building Linux x64 binaries on macOS using musl for static linking.
+#
+# Prerequisites (macOS):
+#   rustup target add x86_64-unknown-linux-musl
+#   brew install filosottile/musl-cross/musl-cross
+#
+# Build:
+#   cargo build --release --target x86_64-unknown-linux-musl
+
+[target.x86_64-unknown-linux-musl]
+linker = "x86_64-linux-musl-gcc"

@@ -1,0 +1,10 @@
+/Users/wolfgangschoenberger/Projects/vibecraft/hooks/rust/target/aarch64-apple-darwin/release/deps/log-7ff0bf1efb18d7b8.d: /Users/wolfgangschoenberger/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/log-0.4.29/src/lib.rs /Users/wolfgangschoenberger/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/log-0.4.29/src/macros.rs /Users/wolfgangschoenberger/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/log-0.4.29/src/serde.rs /Users/wolfgangschoenberger/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/log-0.4.29/src/__private_api.rs
+
+/Users/wolfgangschoenberger/Projects/vibecraft/hooks/rust/target/aarch64-apple-darwin/release/deps/liblog-7ff0bf1efb18d7b8.rlib: /Users/wolfgangschoenberger/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/log-0.4.29/src/lib.rs /Users/wolfgangschoenberger/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/log-0.4.29/src/macros.rs /Users/wolfgangschoenberger/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/log-0.4.29/src/serde.rs /Users/wolfgangschoenberger/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/log-0.4.29/src/__private_api.rs
+
+/Users/wolfgangschoenberger/Projects/vibecraft/hooks/rust/target/aarch64-apple-darwin/release/deps/liblog-7ff0bf1efb18d7b8.rmeta: /Users/wolfgangschoenberger/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/log-0.4.29/src/lib.rs /Users/wolfgangschoenberger/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/log-0.4.29/src/macros.rs /Users/wolfgangschoenberger/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/log-0.4.29/src/serde.rs /Users/wolfgangschoenberger/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/log-0.4.29/src/__private_api.rs
+
+/Users/wolfgangschoenberger/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/log-0.4.29/src/lib.rs:
+/Users/wolfgangschoenberger/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/log-0.4.29/src/macros.rs:
+/Users/wolfgangschoenberger/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/log-0.4.29/src/serde.rs:
+/Users/wolfgangschoenberger/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/log-0.4.29/src/__private_api.rs:

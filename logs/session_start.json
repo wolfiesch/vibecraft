@@ -1,0 +1,159 @@
+[
+  {
+    "session_id": "45e73523-ad12-4f45-8b65-da32dcdebe12",
+    "transcript_path": "/Users/wolfgangschoenberger/.claude/projects/-Users-wolfgangschoenberger-Projects-vibecraft/45e73523-ad12-4f45-8b65-da32dcdebe12.jsonl",
+    "cwd": "/Users/wolfgangschoenberger/Projects/vibecraft",
+    "hook_event_name": "SessionStart",
+    "source": "startup",
+    "model": "claude-opus-4-5-20251101"
+  },
+  {
+    "session_id": "c7118795-a910-447e-a150-1610a7f397fc",
+    "transcript_path": "/Users/wolfgangschoenberger/.claude/projects/-Users-wolfgangschoenberger-Projects-vibecraft/c7118795-a910-447e-a150-1610a7f397fc.jsonl",
+    "cwd": "/Users/wolfgangschoenberger/Projects/vibecraft",
+    "hook_event_name": "SessionStart",
+    "source": "clear"
+  },
+  {
+    "session_id": "6cec35a9-041f-470b-8a74-95db9a88ca5f",
+    "transcript_path": "/Users/wolfgangschoenberger/.claude/projects/-Users-wolfgangschoenberger-Projects-vibecraft/6cec35a9-041f-470b-8a74-95db9a88ca5f.jsonl",
+    "cwd": "/Users/wolfgangschoenberger/Projects/vibecraft",
+    "hook_event_name": "SessionStart",
+    "source": "clear"
+  },
+  {
+    "session_id": "6cec35a9-041f-470b-8a74-95db9a88ca5f",
+    "transcript_path": "/Users/wolfgangschoenberger/.claude/projects/-Users-wolfgangschoenberger-Projects-vibecraft/6cec35a9-041f-470b-8a74-95db9a88ca5f.jsonl",
+    "cwd": "/Users/wolfgangschoenberger/Projects/vibecraft",
+    "hook_event_name": "SessionStart",
+    "source": "compact",
+    "model": "claude-opus-4-5-20251101"
+  },
+  {
+    "session_id": "7c2bb6f9-5b81-4ab5-9092-d504eb174cc3",
+    "transcript_path": "/Users/wolfgangschoenberger/.claude/projects/-Users-wolfgangschoenberger-Projects-vibecraft/7c2bb6f9-5b81-4ab5-9092-d504eb174cc3.jsonl",
+    "cwd": "/Users/wolfgangschoenberger/Projects/vibecraft",
+    "hook_event_name": "SessionStart",
+    "source": "clear"
+  },
+  {
+    "session_id": "7c2bb6f9-5b81-4ab5-9092-d504eb174cc3",
+    "transcript_path": "/Users/wolfgangschoenberger/.claude/projects/-Users-wolfgangschoenberger-Projects-vibecraft/7c2bb6f9-5b81-4ab5-9092-d504eb174cc3.jsonl",
+    "cwd": "/Users/wolfgangschoenberger/Projects/vibecraft",
+    "hook_event_name": "SessionStart",
+    "source": "compact",
+    "model": "claude-opus-4-5-20251101"
+  },
+  {
+    "session_id": "0c703ca2-ea65-4e45-bb09-f27727723cb9",
+    "transcript_path": "/Users/wolfgangschoenberger/.claude/projects/-Users-wolfgangschoenberger-Projects-vibecraft/0c703ca2-ea65-4e45-bb09-f27727723cb9.jsonl",
+    "cwd": "/Users/wolfgangschoenberger/Projects/vibecraft",
+    "hook_event_name": "SessionStart",
+    "source": "clear"
+  },
+  {
+    "session_id": "0c703ca2-ea65-4e45-bb09-f27727723cb9",
+    "transcript_path": "/Users/wolfgangschoenberger/.claude/projects/-Users-wolfgangschoenberger-Projects-vibecraft/0c703ca2-ea65-4e45-bb09-f27727723cb9.jsonl",
+    "cwd": "/Users/wolfgangschoenberger/Projects/vibecraft",
+    "hook_event_name": "SessionStart",
+    "source": "compact",
+    "model": "claude-opus-4-5-20251101"
+  },
+  {
+    "session_id": "987313e8-979f-4fca-9e18-679cebc5a3ac",
+    "transcript_path": "/Users/wolfgangschoenberger/.claude/projects/-Users-wolfgangschoenberger-Projects-vibecraft/987313e8-979f-4fca-9e18-679cebc5a3ac.jsonl",
+    "cwd": "/Users/wolfgangschoenberger/Projects/vibecraft",
+    "hook_event_name": "SessionStart",
+    "source": "startup",
+    "model": "claude-opus-4-5-20251101"
+  },
+  {
+    "session_id": "b1d2414f-71e0-4774-9d7c-9a707b21af49",
+    "transcript_path": "/Users/wolfgangschoenberger/.claude/projects/-Users-wolfgangschoenberger-Projects-vibecraft/b1d2414f-71e0-4774-9d7c-9a707b21af49.jsonl",
+    "cwd": "/Users/wolfgangschoenberger/Projects/vibecraft",
+    "hook_event_name": "SessionStart",
+    "source": "startup",
+    "model": "claude-opus-4-5-20251101"
+  },
+  {
+    "session_id": "34389988-b936-42bc-9c77-a7206872c086",
+    "transcript_path": "/Users/wolfgangschoenberger/.claude/projects/-Users-wolfgangschoenberger-Projects-vibecraft/34389988-b936-42bc-9c77-a7206872c086.jsonl",
+    "cwd": "/Users/wolfgangschoenberger/Projects/vibecraft",
+    "hook_event_name": "SessionStart",
+    "source": "clear"
+  },
+  {
+    "session_id": "9a3ae72d-3c85-4e16-9cd6-974d67aaf406",
+    "transcript_path": "/Users/wolfgangschoenberger/.claude/projects/-Users-wolfgangschoenberger-Projects-vibecraft/9a3ae72d-3c85-4e16-9cd6-974d67aaf406.jsonl",
+    "cwd": "/Users/wolfgangschoenberger/Projects/vibecraft",
+    "hook_event_name": "SessionStart",
+    "source": "startup",
+    "model": "claude-opus-4-5-20251101"
+  },
+  {
+    "session_id": "4b8a9a38-d813-4e24-ac7a-599c20ad5213",
+    "transcript_path": "/Users/wolfgangschoenberger/.claude/projects/-Users-wolfgangschoenberger-Projects-vibecraft/4b8a9a38-d813-4e24-ac7a-599c20ad5213.jsonl",
+    "cwd": "/Users/wolfgangschoenberger/Projects/vibecraft",
+    "hook_event_name": "SessionStart",
+    "source": "startup",
+    "model": "claude-opus-4-5-20251101"
+  },
+  {
+    "session_id": "c1acdb3f-b55b-4a48-8d0c-a0f97febbb70",
+    "transcript_path": "/Users/wolfgangschoenberger/.claude/projects/-Users-wolfgangschoenberger-Projects-vibecraft/c1acdb3f-b55b-4a48-8d0c-a0f97febbb70.jsonl",
+    "cwd": "/Users/wolfgangschoenberger/Projects/vibecraft",
+    "hook_event_name": "SessionStart",
+    "source": "clear"
+  },
+  {
+    "session_id": "2e4cb2d5-40b5-46cb-8a36-8bb2e7bf101a",
+    "transcript_path": "/Users/wolfgangschoenberger/.claude/projects/-Users-wolfgangschoenberger-Projects-vibecraft/2e4cb2d5-40b5-46cb-8a36-8bb2e7bf101a.jsonl",
+    "cwd": "/Users/wolfgangschoenberger/Projects/vibecraft",
+    "hook_event_name": "SessionStart",
+    "source": "clear"
+  },
+  {
+    "session_id": "2e4cb2d5-40b5-46cb-8a36-8bb2e7bf101a",
+    "transcript_path": "/Users/wolfgangschoenberger/.claude/projects/-Users-wolfgangschoenberger-Projects-vibecraft/2e4cb2d5-40b5-46cb-8a36-8bb2e7bf101a.jsonl",
+    "cwd": "/Users/wolfgangschoenberger/Projects/vibecraft",
+    "hook_event_name": "SessionStart",
+    "source": "compact",
+    "model": "claude-opus-4-5-20251101"
+  },
+  {
+    "session_id": "d0bb6560-0f79-4fcf-b662-619fa7efe783",
+    "transcript_path": "/Users/wolfgangschoenberger/.claude/projects/-Users-wolfgangschoenberger-Projects-vibecraft/d0bb6560-0f79-4fcf-b662-619fa7efe783.jsonl",
+    "cwd": "/Users/wolfgangschoenberger/Projects/vibecraft",
+    "hook_event_name": "SessionStart",
+    "source": "clear"
+  },
+  {
+    "session_id": "d0bb6560-0f79-4fcf-b662-619fa7efe783",
+    "transcript_path": "/Users/wolfgangschoenberger/.claude/projects/-Users-wolfgangschoenberger-Projects-vibecraft/d0bb6560-0f79-4fcf-b662-619fa7efe783.jsonl",
+    "cwd": "/Users/wolfgangschoenberger/Projects/vibecraft",
+    "hook_event_name": "SessionStart",
+    "source": "compact",
+    "model": "claude-opus-4-5-20251101"
+  },
+  {
+    "session_id": "955e8f73-7688-455b-95d2-0984e90e780d",
+    "transcript_path": "/Users/wolfgangschoenberger/.claude/projects/-Users-wolfgangschoenberger-Projects-vibecraft/955e8f73-7688-455b-95d2-0984e90e780d.jsonl",
+    "cwd": "/Users/wolfgangschoenberger/Projects/vibecraft",
+    "hook_event_name": "SessionStart",
+    "source": "clear"
+  },
+  {
+    "session_id": "03400a8f-8709-45a2-8db1-776a4940b3af",
+    "transcript_path": "/Users/wolfgangschoenberger/.claude/projects/-Users-wolfgangschoenberger-Projects-vibecraft/03400a8f-8709-45a2-8db1-776a4940b3af.jsonl",
+    "cwd": "/Users/wolfgangschoenberger/Projects/vibecraft",
+    "hook_event_name": "SessionStart",
+    "source": "clear"
+  },
+  {
+    "session_id": "d8f2e675-15ae-4b6e-acd8-29f33fd95642",
+    "transcript_path": "/Users/wolfgangschoenberger/.claude/projects/-Users-wolfgangschoenberger-Projects-vibecraft/d8f2e675-15ae-4b6e-acd8-29f33fd95642.jsonl",
+    "cwd": "/Users/wolfgangschoenberger/Projects/vibecraft",
+    "hook_event_name": "SessionStart",
+    "source": "clear"
+  }
+]

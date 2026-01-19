@@ -1,0 +1,10 @@
+[
+  {
+    "session_id": "4b8a9a38-d813-4e24-ac7a-599c20ad5213",
+    "transcript_path": "/Users/wolfgangschoenberger/.claude/projects/-Users-wolfgangschoenberger-Projects-vibecraft/4b8a9a38-d813-4e24-ac7a-599c20ad5213.jsonl",
+    "cwd": "/Users/wolfgangschoenberger/Projects/vibecraft",
+    "permission_mode": "bypassPermissions",
+    "hook_event_name": "Stop",
+    "stop_hook_active": false
+  }
+]

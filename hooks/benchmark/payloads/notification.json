@@ -1,0 +1,7 @@
+{
+  "hook_event_name": "Notification",
+  "session_id": "test-session-12345",
+  "cwd": "/Users/test/Projects/myapp",
+  "message": "Permission required for Bash tool",
+  "notification_type": "permission_prompt"
+}

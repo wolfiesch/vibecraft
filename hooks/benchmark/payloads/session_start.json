@@ -1,0 +1,6 @@
+{
+  "hook_event_name": "SessionStart",
+  "session_id": "test-session-12345",
+  "cwd": "/Users/test/Projects/myapp",
+  "source": "startup"
+}

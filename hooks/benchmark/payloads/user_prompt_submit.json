@@ -1,0 +1,6 @@
+{
+  "hook_event_name": "UserPromptSubmit",
+  "session_id": "test-session-12345",
+  "cwd": "/Users/test/Projects/myapp",
+  "prompt": "Can you help me refactor the authentication module to use JWT tokens instead of session cookies? I need to support both mobile and web clients."
+}

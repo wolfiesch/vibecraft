@@ -1,0 +1,50 @@
+[
+  {
+    "session_id": "9a3ae72d-3c85-4e16-9cd6-974d67aaf406",
+    "transcript_path": "/Users/wolfgangschoenberger/.claude/projects/-Users-wolfgangschoenberger-Projects-vibecraft/9a3ae72d-3c85-4e16-9cd6-974d67aaf406.jsonl",
+    "cwd": "/Users/wolfgangschoenberger/Projects/vibecraft",
+    "hook_event_name": "SessionEnd",
+    "reason": "clear",
+    "logged_at": "2026-01-19T07:02:25.333936"
+  },
+  {
+    "session_id": "4b8a9a38-d813-4e24-ac7a-599c20ad5213",
+    "transcript_path": "/Users/wolfgangschoenberger/.claude/projects/-Users-wolfgangschoenberger-Projects-vibecraft/4b8a9a38-d813-4e24-ac7a-599c20ad5213.jsonl",
+    "cwd": "/Users/wolfgangschoenberger/Projects/vibecraft",
+    "hook_event_name": "SessionEnd",
+    "reason": "clear",
+    "logged_at": "2026-01-19T07:19:24.645447"
+  },
+  {
+    "session_id": "2e4cb2d5-40b5-46cb-8a36-8bb2e7bf101a",
+    "transcript_path": "/Users/wolfgangschoenberger/.claude/projects/-Users-wolfgangschoenberger-Projects-vibecraft/2e4cb2d5-40b5-46cb-8a36-8bb2e7bf101a.jsonl",
+    "cwd": "/Users/wolfgangschoenberger/Projects/vibecraft",
+    "hook_event_name": "SessionEnd",
+    "reason": "clear",
+    "logged_at": "2026-01-19T07:56:27.826631"
+  },
+  {
+    "session_id": "c1acdb3f-b55b-4a48-8d0c-a0f97febbb70",
+    "transcript_path": "/Users/wolfgangschoenberger/.claude/projects/-Users-wolfgangschoenberger-Projects-vibecraft/c1acdb3f-b55b-4a48-8d0c-a0f97febbb70.jsonl",
+    "cwd": "/Users/wolfgangschoenberger/Projects/vibecraft",
+    "hook_event_name": "SessionEnd",
+    "reason": "clear",
+    "logged_at": "2026-01-19T08:53:29.799265"
+  },
+  {
+    "session_id": "955e8f73-7688-455b-95d2-0984e90e780d",
+    "transcript_path": "/Users/wolfgangschoenberger/.claude/projects/-Users-wolfgangschoenberger-Projects-vibecraft/955e8f73-7688-455b-95d2-0984e90e780d.jsonl",
+    "cwd": "/Users/wolfgangschoenberger/Projects/vibecraft",
+    "hook_event_name": "SessionEnd",
+    "reason": "clear",
+    "logged_at": "2026-01-19T08:57:36.775039"
+  },
+  {
+    "session_id": "03400a8f-8709-45a2-8db1-776a4940b3af",
+    "transcript_path": "/Users/wolfgangschoenberger/.claude/projects/-Users-wolfgangschoenberger-Projects-vibecraft/03400a8f-8709-45a2-8db1-776a4940b3af.jsonl",
+    "cwd": "/Users/wolfgangschoenberger/Projects/vibecraft",
+    "hook_event_name": "SessionEnd",
+    "reason": "clear",
+    "logged_at": "2026-01-19T09:17:25.389418"
+  }
+]

@@ -1,0 +1,18 @@
+[
+  {
+    "session_id": "d8f2e675-15ae-4b6e-acd8-29f33fd95642",
+    "transcript_path": "/Users/wolfgangschoenberger/.claude/projects/-Users-wolfgangschoenberger-Projects-vibecraft/d8f2e675-15ae-4b6e-acd8-29f33fd95642.jsonl",
+    "cwd": "/Users/wolfgangschoenberger/Projects/vibecraft",
+    "permission_mode": "bypassPermissions",
+    "hook_event_name": "Stop",
+    "stop_hook_active": false
+  },
+  {
+    "session_id": "d8f2e675-15ae-4b6e-acd8-29f33fd95642",
+    "transcript_path": "/Users/wolfgangschoenberger/.claude/projects/-Users-wolfgangschoenberger-Projects-vibecraft/d8f2e675-15ae-4b6e-acd8-29f33fd95642.jsonl",
+    "cwd": "/Users/wolfgangschoenberger/Projects/vibecraft",
+    "permission_mode": "bypassPermissions",
+    "hook_event_name": "Stop",
+    "stop_hook_active": false
+  }
+]

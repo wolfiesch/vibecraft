@@ -1,0 +1,17 @@
+{
+  "hook_event_name": "PostToolUse",
+  "session_id": "test-session-12345",
+  "cwd": "/Users/test/Projects/myapp",
+  "tool_name": "Edit",
+  "tool_input": {
+    "file_path": "/Users/test/Projects/myapp/src/utils/helpers.ts",
+    "old_string": "function calculateTotal(items) {",
+    "new_string": "function calculateTotal(items: Item[]) {"
+  },
+  "tool_use_id": "toolu_01DEF456abc",
+  "tool_response": {
+    "success": true,
+    "content": "Successfully edited file",
+    "lines_modified": 1
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "hook_event_name": "SessionEnd",
+  "session_id": "test-session-12345",
+  "cwd": "/Users/test/Projects/myapp",
+  "reason": "clear"
+}

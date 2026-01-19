@@ -23,7 +23,8 @@
   },
   "files": [
     "bin/",
-    "hooks/",
+    "hooks/vibecraft-hook.sh",
+    "hooks/bin/",
     "dist/",
     "!dist/**/*.map",
     "data/.gitkeep"

@@ -366,10 +366,13 @@ section "7. HOOK SCRIPT TEST"
 echo ""
 echo "Looking for hook script..."
 
-# Common locations
+# Common locations (Rust binary first, then bash script)
 HOOK_LOCATIONS=(
+  "$HOME/.vibecraft/hooks/vibecraft-hook"
   "$HOME/.vibecraft/hooks/vibecraft-hook.sh"
+  "/usr/local/share/vibecraft/hooks/vibecraft-hook"
   "/usr/local/share/vibecraft/hooks/vibecraft-hook.sh"
+  "/opt/homebrew/share/vibecraft/hooks/vibecraft-hook"
   "/opt/homebrew/share/vibecraft/hooks/vibecraft-hook.sh"
 )
 
@@ -391,15 +394,15 @@ for loc in "${HOOK_LOCATIONS[@]}"; do
 done
 
 if [ -z "$HOOK_FOUND" ]; then
-  # Try to find it anywhere
-  echo "  Searching for hook script..."
-  FOUND_HOOKS=$(find /usr /opt "$HOME" -name "vibecraft-hook.sh" 2>/dev/null | head -5)
+  # Try to find it anywhere (search for both Rust binary and bash script)
+  echo "  Searching for hook..."
+  FOUND_HOOKS=$(find /usr /opt "$HOME" \( -name "vibecraft-hook" -o -name "vibecraft-hook.sh" \) -type f 2>/dev/null | head -5)
   if [ -n "$FOUND_HOOKS" ]; then
-    warn "Hook script found in unexpected location(s):"
+    warn "Hook found in unexpected location(s):"
     echo "$FOUND_HOOKS" | sed 's/^/    /'
     HOOK_FOUND=$(echo "$FOUND_HOOKS" | head -1)
   else
-    error "Hook script not found anywhere!"
+    error "Hook not found anywhere!"
   fi
 fi
 

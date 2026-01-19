@@ -69,13 +69,17 @@ Open http://localhost:4003 in your browser.
 | Dependency | Required? | Purpose |
 |------------|-----------|---------|
 | **Node.js 18+** | Yes | Runs the server |
-| **jq** | Yes | JSON processing in hook scripts |
+| **jq** | Rust hook: No, Bash hook: Yes | JSON processing in bash hook scripts |
+| **curl** | Recommended | HTTP notifications (optional - events saved to JSONL anyway) |
 | **tmux** | Optional | Session management, browser→Claude prompts |
+
+**Note:** Vibecraft automatically uses the high-performance **Rust hook** (7-10x faster) on supported platforms (macOS arm64/x64, Linux x64). On other platforms, it falls back to the bash hook which requires `jq`.
 
 **Check if installed:**
 ```bash
 node --version   # Should be 18+
-jq --version     # Should output version
+jq --version     # Should output version (for bash hook)
+curl --version   # Should output version (recommended)
 tmux -V          # Should output version (optional)
 ```
 
@@ -90,17 +94,31 @@ npx vibecraft setup
 ```
 
 This:
-- Copies hook script to `~/.vibecraft/hooks/vibecraft-hook.sh`
+- Installs Rust hook binary to `~/.vibecraft/hooks/vibecraft-hook` (or bash script as fallback)
 - Creates `~/.vibecraft/data/` directory
 - Configures all 8 hooks in `~/.claude/settings.json`
 - Backs up existing settings
-- Checks for jq/tmux
+- Checks for curl (optional for real-time notifications) and tmux (optional for browser prompts)
 
 **After setup, restart Claude Code for hooks to take effect.**
 
 ### Option B: Manual Configuration
 
-If you prefer to configure hooks manually, add to `~/.claude/settings.json`:
+If you prefer to configure hooks manually:
+
+**Step 1:** Run setup first to install the hook binary/script:
+```bash
+npx vibecraft setup
+```
+
+**Step 2:** Get your installed hook path:
+```bash
+npx vibecraft --hook-path
+# Returns: ~/.vibecraft/hooks/vibecraft-hook (Rust) or
+#          ~/.vibecraft/hooks/vibecraft-hook.sh (Bash)
+```
+
+**Step 3:** Add to `~/.claude/settings.json`:
 
 ```json
 {
@@ -133,12 +151,11 @@ If you prefer to configure hooks manually, add to `~/.claude/settings.json`:
 }
 ```
 
-Replace `HOOK_PATH` with the output of:
-```bash
-npx vibecraft --hook-path
-```
+Replace `HOOK_PATH` with the output from step 2.
 
-**Note:** You must also copy the hook script to a stable location and ensure `~/.vibecraft/data/` exists.
+**Hook Types:**
+- **Rust binary** (`~/.vibecraft/hooks/vibecraft-hook`): 7-10x faster, no jq required, requires curl for real-time notifications
+- **Bash script** (`~/.vibecraft/hooks/vibecraft-hook.sh`): Fallback for unsupported platforms, requires jq and curl
 
 ---
 

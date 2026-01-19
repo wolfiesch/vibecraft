@@ -23,8 +23,12 @@ npm install
 # Create data directory
 mkdir -p "$PLUGIN_DIR/data"
 
-# Make hook script executable
-chmod +x "$PLUGIN_DIR/hooks/vibecraft-hook.sh"
+# Make hook scripts/binaries executable
+chmod +x "$PLUGIN_DIR/hooks/vibecraft-hook.sh" 2>/dev/null || true
+# Also make any Rust binaries executable
+for binary in "$PLUGIN_DIR/hooks/bin/vibecraft-hook-"*; do
+  [ -f "$binary" ] && chmod +x "$binary"
+done
 
 # Check if Claude Code settings file exists
 CLAUDE_SETTINGS="$HOME/.claude/settings.json"
@@ -35,18 +39,22 @@ if [ -f "$CLAUDE_SETTINGS" ]; then
   echo ""
   echo "To enable Vibecraft hooks, add this to your settings.json hooks section:"
   echo ""
+  echo "NOTE: It's recommended to run 'npx vibecraft setup' instead, which auto-detects"
+  echo "      the best hook type (Rust binary or bash script) for your platform."
+  echo ""
+  echo "Manual configuration example (replace HOOK_PATH with your actual hook path):"
   cat << 'EOF'
 {
   "hooks": {
-    "PreToolUse": [{"matcher": "*", "hooks": [{"type": "command", "command": "/path/to/vibecraft/hooks/vibecraft-hook.sh"}]}],
-    "PostToolUse": [{"matcher": "*", "hooks": [{"type": "command", "command": "/path/to/vibecraft/hooks/vibecraft-hook.sh"}]}],
-    "Stop": [{"matcher": "", "hooks": [{"type": "command", "command": "/path/to/vibecraft/hooks/vibecraft-hook.sh"}]}],
-    "UserPromptSubmit": [{"matcher": "", "hooks": [{"type": "command", "command": "/path/to/vibecraft/hooks/vibecraft-hook.sh"}]}]
+    "PreToolUse": [{"matcher": "*", "hooks": [{"type": "command", "command": "HOOK_PATH"}]}],
+    "PostToolUse": [{"matcher": "*", "hooks": [{"type": "command", "command": "HOOK_PATH"}]}],
+    "Stop": [{"matcher": "", "hooks": [{"type": "command", "command": "HOOK_PATH"}]}],
+    "UserPromptSubmit": [{"matcher": "", "hooks": [{"type": "command", "command": "HOOK_PATH"}]}]
   }
 }
 EOF
   echo ""
-  echo "Replace /path/to/vibecraft with: $PLUGIN_DIR"
+  echo "Get your hook path with: npx vibecraft --hook-path"
 else
   echo "Creating Claude Code settings directory..."
   mkdir -p "$HOME/.claude"

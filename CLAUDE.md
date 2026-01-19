@@ -92,32 +92,43 @@ Defines all TypeScript types used across server and client:
 
 **Important**: When adding new tools, update `TOOL_STATION_MAP` to assign them to stations.
 
-### `hooks/vibecraft-hook.sh`
-Bash script that captures Claude Code events. The source lives in `hooks/vibecraft-hook.sh` but `npx vibecraft setup` copies it to `~/.vibecraft/hooks/vibecraft-hook.sh` (stable location).
+### Hook Scripts (Rust/Bash)
 
-**What it does:**
-- Reads JSON from stdin (Claude Code pipes hook data)
-- Transforms to our event format with `jq`
-- Writes to `~/.vibecraft/data/events.jsonl` (append-only log)
-- POSTs to server for real-time updates
+Vibecraft uses hooks to capture Claude Code events. **The Rust hook is preferred** (7-10x faster) but falls back to the bash script on unsupported platforms.
 
-**Cross-platform support:**
+**Rust hook** (`hooks/rust/`) - Compiled binary, ~3.5ms latency:
+- Source: `hooks/rust/src/main.rs`
+- Installed to: `~/.vibecraft/hooks/vibecraft-hook` (no extension)
+- Binaries: `hooks/bin/vibecraft-hook-{darwin-arm64,darwin-x64,darwin-universal,linux-x64}`
+- Dependencies: curl (optional, for HTTP notifications)
+
+**Bash hook** (`hooks/vibecraft-hook.sh`) - Fallback for unsupported platforms:
+- Installed to: `~/.vibecraft/hooks/vibecraft-hook.sh`
+- Dependencies: jq (required), curl (required)
+
+**Both hooks do the same thing:**
+- Read JSON from stdin (Claude Code pipes hook data)
+- Transform to Vibecraft event format
+- Write to `~/.vibecraft/data/events.jsonl` (append-only log)
+- POST to server for real-time updates
+
+**Bash hook cross-platform support:**
 - Adds common tool paths to PATH (`/opt/homebrew/bin`, `/usr/local/bin`, etc.)
 - Uses `find_tool()` function to locate `jq` (required) and `curl` (optional)
 - Handles macOS timestamp differences (no `date +%N`)
 
 **Dependencies:**
-- `jq` - **Required**. Used to parse and transform JSON events.
+- `jq` - **Required** (bash hook only). Used to parse and transform JSON events.
 - `curl` - **Optional**. Used for real-time server notifications. If missing, events are still written to JSONL (server watches file for changes via chokidar).
 
 **Known issue fixed**: Timestamp calculation used `$(date +%N)` which returns "087" etc. This was interpreted as octal. Fixed with `10#$ms_part` to force decimal.
 
-**Compact JSON**: Must use `jq -n -c` (not just `jq -n`) to avoid multi-line output breaking JSONL format.
+**Compact JSON**: Bash hook must use `jq -n -c` (not just `jq -n`) to avoid multi-line output breaking JSONL format.
 
 ### Setup Process (`npx vibecraft setup`)
 
 The setup command:
-1. Copies `hooks/vibecraft-hook.sh` to `~/.vibecraft/hooks/vibecraft-hook.sh`
+1. Installs Rust binary to `~/.vibecraft/hooks/vibecraft-hook` (or bash script as fallback)
 2. Creates `~/.vibecraft/data/` directory
 3. Configures all 8 hooks in `~/.claude/settings.json`:
    - PreToolUse, PostToolUse, Stop, SubagentStop

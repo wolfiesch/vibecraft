@@ -1,0 +1,31 @@
+[package]
+name = "vibecraft-hook"
+version = "0.1.0"
+edition = "2021"
+description = "High-performance Vibecraft hook for Claude Code events"
+authors = ["Wolfgang Schoenberger"]
+license = "MIT"
+
+[lib]
+name = "vibecraft_hook"
+path = "src/lib.rs"
+
+[[bin]]
+name = "vibecraft-hook"
+path = "src/main.rs"
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+chrono = "0.4"
+rand = "0.8"
+dirs = "5.0"
+# Note: ureq removed - now using curl child process for HTTP notifications
+# This is required because threads die when main() exits, but child processes survive
+
+[profile.release]
+opt-level = 3
+lto = true
+strip = true
+codegen-units = 1
+panic = "abort"

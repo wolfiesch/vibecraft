@@ -1,0 +1,10 @@
+/Users/wolfgangschoenberger/Projects/vibecraft/hooks/rust/target/x86_64-apple-darwin/release/deps/untrusted-147fb1e3fe74b749.d: /Users/wolfgangschoenberger/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/untrusted-0.9.0/src/lib.rs /Users/wolfgangschoenberger/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/untrusted-0.9.0/src/input.rs /Users/wolfgangschoenberger/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/untrusted-0.9.0/src/no_panic.rs /Users/wolfgangschoenberger/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/untrusted-0.9.0/src/reader.rs
+
+/Users/wolfgangschoenberger/Projects/vibecraft/hooks/rust/target/x86_64-apple-darwin/release/deps/libuntrusted-147fb1e3fe74b749.rlib: /Users/wolfgangschoenberger/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/untrusted-0.9.0/src/lib.rs /Users/wolfgangschoenberger/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/untrusted-0.9.0/src/input.rs /Users/wolfgangschoenberger/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/untrusted-0.9.0/src/no_panic.rs /Users/wolfgangschoenberger/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/untrusted-0.9.0/src/reader.rs
+
+/Users/wolfgangschoenberger/Projects/vibecraft/hooks/rust/target/x86_64-apple-darwin/release/deps/libuntrusted-147fb1e3fe74b749.rmeta: /Users/wolfgangschoenberger/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/untrusted-0.9.0/src/lib.rs /Users/wolfgangschoenberger/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/untrusted-0.9.0/src/input.rs /Users/wolfgangschoenberger/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/untrusted-0.9.0/src/no_panic.rs /Users/wolfgangschoenberger/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/untrusted-0.9.0/src/reader.rs
+
+/Users/wolfgangschoenberger/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/untrusted-0.9.0/src/lib.rs:
+/Users/wolfgangschoenberger/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/untrusted-0.9.0/src/input.rs:
+/Users/wolfgangschoenberger/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/untrusted-0.9.0/src/no_panic.rs:
+/Users/wolfgangschoenberger/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/untrusted-0.9.0/src/reader.rs:
