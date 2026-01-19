@@ -160,7 +160,7 @@ export type ServerMessage =
   | { type: 'history'; payload: ClaudeEvent[] }
   | { type: 'connected'; payload: { sessionId: string } }
   | { type: 'error'; payload: { message: string } }
-  | { type: 'tokens'; payload: { session: string; current: number; cumulative: number } }
+  | { type: 'tokens'; payload: { session: string; sessionId?: string; current: number; cumulative: number } }
   | { type: 'sessions'; payload: ManagedSession[] }
   | { type: 'session_update'; payload: ManagedSession }
   | { type: 'permission_prompt'; payload: { sessionId: string; tool: string; context: string; options: PermissionOption[] } }

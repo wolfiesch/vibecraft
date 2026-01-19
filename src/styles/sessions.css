@@ -294,3 +294,12 @@
   border: 1px solid rgba(147, 197, 253, 0.3);
   color: #93c5fd;
 }
+
+/* Token display */
+.session-tokens {
+  font-size: 10px;
+  color: #22d3ee;
+  font-family: var(--font-mono, monospace);
+  margin-top: 1px;
+  opacity: 0.8;
+}

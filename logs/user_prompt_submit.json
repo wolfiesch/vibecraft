@@ -574,5 +574,21 @@
     "permission_mode": "bypassPermissions",
     "hook_event_name": "UserPromptSubmit",
     "prompt": "create local integration branch"
+  },
+  {
+    "session_id": "d0bb6560-0f79-4fcf-b662-619fa7efe783",
+    "transcript_path": "/Users/wolfgangschoenberger/.claude/projects/-Users-wolfgangschoenberger-Projects-vibecraft/d0bb6560-0f79-4fcf-b662-619fa7efe783.jsonl",
+    "cwd": "/Users/wolfgangschoenberger/Projects/vibecraft",
+    "permission_mode": "bypassPermissions",
+    "hook_event_name": "UserPromptSubmit",
+    "prompt": "start the dev server"
+  },
+  {
+    "session_id": "d0bb6560-0f79-4fcf-b662-619fa7efe783",
+    "transcript_path": "/Users/wolfgangschoenberger/.claude/projects/-Users-wolfgangschoenberger-Projects-vibecraft/d0bb6560-0f79-4fcf-b662-619fa7efe783.jsonl",
+    "cwd": "/Users/wolfgangschoenberger/Projects/vibecraft",
+    "permission_mode": "bypassPermissions",
+    "hook_event_name": "UserPromptSubmit",
+    "prompt": "can we add (feat/per-session-token-display) too?"
   }
 ]

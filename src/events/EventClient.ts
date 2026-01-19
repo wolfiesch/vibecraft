@@ -7,7 +7,7 @@ import type { ClaudeEvent, ServerMessage, ClientMessage, ManagedSession } from '
 export type EventHandler = (event: ClaudeEvent) => void
 export type HistoryHandler = (events: ClaudeEvent[]) => void
 export type ConnectionHandler = (connected: boolean) => void
-export type TokensHandler = (data: { session: string; current: number; cumulative: number }) => void
+export type TokensHandler = (data: { session: string; sessionId?: string; current: number; cumulative: number }) => void
 export type SessionsHandler = (sessions: ManagedSession[]) => void
 export type SessionUpdateHandler = (session: ManagedSession) => void
 export type RawMessageHandler = (data: { type: string; payload?: unknown }) => void
@@ -263,7 +263,7 @@ export class EventClient {
     }
   }
 
-  private notifyTokensHandlers(data: { session: string; current: number; cumulative: number }): void {
+  private notifyTokensHandlers(data: { session: string; sessionId?: string; current: number; cumulative: number }): void {
     for (const handler of this.tokensHandlers) {
       try {
         handler(data)
