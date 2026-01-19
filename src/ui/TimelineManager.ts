@@ -106,6 +106,58 @@ export class TimelineManager {
   }
 
   /**
+   * Clear all timeline icons and state (used for replay mode)
+   */
+  clear(): void {
+    if (!this.timelineEl) return
+
+    // Remove all icons
+    while (this.timelineEl.firstChild) {
+      this.timelineEl.removeChild(this.timelineEl.firstChild)
+    }
+
+    // Clear tracking state
+    this.eventIds.clear()
+    this.pendingIcons.clear()
+    this.completedToolUses.clear()
+  }
+
+  /**
+   * Highlight a specific icon by index (for replay playhead)
+   */
+  highlightIcon(index: number): void {
+    if (!this.timelineEl) return
+
+    // Remove previous highlight
+    const prev = this.timelineEl.querySelector('.replay-current')
+    prev?.classList.remove('replay-current')
+
+    // Add highlight to current icon
+    const icons = this.timelineEl.querySelectorAll('.timeline-icon')
+    if (index >= 0 && index < icons.length) {
+      icons[index].classList.add('replay-current')
+      // Scroll icon into view
+      icons[index].scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' })
+    }
+  }
+
+  /**
+   * Clear replay highlight
+   */
+  clearHighlight(): void {
+    if (!this.timelineEl) return
+    const highlighted = this.timelineEl.querySelector('.replay-current')
+    highlighted?.classList.remove('replay-current')
+  }
+
+  /**
+   * Get the number of icons currently displayed
+   */
+  getIconCount(): number {
+    return this.timelineEl?.children.length ?? 0
+  }
+
+  /**
    * Remove old icons when timeline exceeds max size
    */
   private pruneOldIcons(): void {

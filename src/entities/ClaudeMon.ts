@@ -480,6 +480,38 @@ export class Claude implements ICharacter {
     this.updateStatusColor()
   }
 
+  /**
+   * Instantly teleport to a station (no walking animation)
+   * Used during replay mode for instant state reconstruction
+   */
+  teleportTo(station: StationType): void {
+    const targetStation = this.scene.stations.get(station)
+    if (!targetStation) {
+      console.warn(`Unknown station: ${station}`)
+      return
+    }
+
+    // Cancel any in-progress movement
+    this.targetPosition = null
+
+    // Instantly move to position
+    this.mesh.position.copy(targetStation.position)
+    this.currentStation = station
+
+    // Face the station (away from center)
+    if (station !== 'center') {
+      const centerStation = this.scene.stations.get('center')
+      if (centerStation) {
+        const direction = targetStation.position.clone().sub(centerStation.position)
+        const angle = Math.atan2(direction.x, direction.z)
+        this.mesh.rotation.y = angle
+      }
+    }
+
+    // Set to working state if not at center
+    this.setState(station === 'center' ? 'idle' : 'working')
+  }
+
   moveToPosition(position: THREE.Vector3, station: StationType): void {
     this.targetPosition = position.clone()
     this.currentStation = station

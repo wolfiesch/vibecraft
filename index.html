@@ -99,6 +99,29 @@
           <!-- Populated by DrawMode.ts -->
         </div>
 
+        <!-- Replay Controls Panel -->
+        <div id="replay-panel" class="hidden">
+          <div class="replay-badge">Replay</div>
+          <div class="replay-divider"></div>
+          <button id="replay-prev" class="replay-btn" title="Previous event (Left Arrow)">⏮</button>
+          <button id="replay-play" class="replay-btn replay-btn-play" title="Play/Pause (Space)">▶</button>
+          <button id="replay-next" class="replay-btn" title="Next event (Right Arrow)">⏭</button>
+          <div class="replay-divider"></div>
+          <div class="replay-scrubber-container">
+            <input type="range" id="replay-scrubber" min="0" max="0" value="0" />
+          </div>
+          <span id="replay-time">0:00 / 0:00</span>
+          <span id="replay-event-counter">0 / 0</span>
+          <div class="replay-divider"></div>
+          <select id="replay-speed" title="Playback speed (S)">
+            <option value="0.5">0.5x</option>
+            <option value="1" selected>1x</option>
+            <option value="2">2x</option>
+            <option value="4">4x</option>
+          </select>
+          <button id="replay-exit" class="replay-btn replay-btn-exit" title="Return to live (Escape)">LIVE</button>
+        </div>
+
       </div>
 
       <!-- Right: Activity Feed -->
@@ -263,6 +286,7 @@
           <label>Sessions</label>
           <div class="settings-actions">
             <button type="button" class="settings-action-btn" id="settings-refresh-sessions">🔄 Refresh Sessions</button>
+            <button type="button" class="settings-action-btn" id="settings-replay-session">⏪ Replay History</button>
           </div>
         </div>
 

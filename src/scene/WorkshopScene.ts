@@ -751,6 +751,38 @@ export class WorkshopScene {
   }
 
   /**
+   * Immediately remove a zone without animation (for replay mode)
+   * This is a synchronous, instant removal.
+   */
+  removeZone(sessionId: string): void {
+    const zone = this.zones.get(sessionId)
+    if (!zone) return
+
+    // Release hex position
+    this.hexGrid.release(sessionId)
+
+    // Use the same cleanup as finalizeZoneDelete
+    this.finalizeZoneDelete(sessionId)
+  }
+
+  /**
+   * Clear all zones (for replay mode reset)
+   */
+  clearAllZones(): void {
+    // Get all session IDs first to avoid modifying during iteration
+    const sessionIds = Array.from(this.zones.keys())
+
+    for (const sessionId of sessionIds) {
+      this.removeZone(sessionId)
+    }
+
+    // Reset color index
+    this.zoneColorIndex = 0
+
+    console.log('Cleared all zones')
+  }
+
+  /**
    * Focus camera on a specific zone
    */
   focusZone(sessionId: string, animate = true): void {

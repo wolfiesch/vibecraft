@@ -1679,6 +1679,13 @@ function handleHttpRequest(req: IncomingMessage, res: ServerResponse) {
     return
   }
 
+  // History - return all events for replay
+  if (req.method === 'GET' && req.url === '/history') {
+    res.writeHead(200, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify(events))
+    return
+  }
+
   // Submit prompt from browser
   if (req.method === 'POST' && req.url === '/prompt') {
     collectRequestBody(req).then(body => {

@@ -60,6 +60,8 @@ import { checkForUpdates } from './ui/VersionChecker'
 import { drawMode } from './ui/DrawMode'
 import { setupTextLabelModal, showTextLabelModal } from './ui/TextLabelModal'
 import { createSessionAPI, type SessionAPI } from './api'
+import { replayController, ReplaySceneManager, type SceneSnapshot } from './replay'
+import { setupReplayControls, type ReplayControls } from './ui/ReplayControls'
 
 // ============================================================================
 // Configuration
@@ -132,6 +134,10 @@ interface AppState {
   promptHistory: string[]  // History of sent prompts for up/down navigation
   historyIndex: number  // Current position in history (-1 = not navigating)
   historyDraft: string  // Saved draft when navigating history
+  // Replay mode state
+  replaySceneManager: ReplaySceneManager | null  // Manages scene state during replay
+  replayControls: ReplayControls | null  // UI controls for replay
+  replaySnapshot: SceneSnapshot | null  // Snapshot of scene state before replay
 }
 
 const state: AppState = {
@@ -154,6 +160,10 @@ const state: AppState = {
   promptHistory: [],
   historyIndex: -1,
   historyDraft: '',
+  // Replay state
+  replaySceneManager: null,
+  replayControls: null,
+  replaySnapshot: null,
 }
 
 // Expose for console testing (can remove in production)
@@ -1498,6 +1508,133 @@ function getOrCreateSession(sessionId: string, eventCwd?: string): SessionState 
   return session
 }
 
+// ============================================================================
+// Replay Mode
+// ============================================================================
+
+/**
+ * Enter replay mode - fetch history and start replay
+ */
+async function enterReplayMode(): Promise<void> {
+  if (!state.scene || !state.timelineManager || !state.feedManager) {
+    console.error('Cannot enter replay mode: scene not initialized')
+    return
+  }
+
+  // Already in replay mode
+  if (replayController.getState().mode !== 'live') {
+    console.warn('Already in replay mode')
+    return
+  }
+
+  // Fetch all history from server
+  try {
+    const response = await fetch(`${API_URL}/history`)
+    if (!response.ok) {
+      throw new Error(`Failed to fetch history: ${response.status}`)
+    }
+    const events: ClaudeEvent[] = await response.json()
+
+    if (events.length === 0) {
+      toast.info('No events to replay')
+      return
+    }
+
+    // Initialize replay scene manager if not already done
+    if (!state.replaySceneManager) {
+      state.replaySceneManager = new ReplaySceneManager(
+        state.scene,
+        (sessionId: string) => state.sessions.get(sessionId),
+        (sessionId: string, cwd: string) => {
+          const result = getOrCreateSession(sessionId, cwd)
+          if (!result) throw new Error('Failed to create session')
+          return result
+        }
+      )
+      state.replaySceneManager.setManagers(state.timelineManager, state.feedManager)
+    }
+
+    // Capture current scene state
+    state.replaySnapshot = state.replaySceneManager.captureSnapshot()
+
+    // Disconnect from live events
+    state.client?.disconnect()
+
+    // Reset scene for replay
+    state.replaySceneManager.resetForReplay()
+
+    // Clear timeline and feed
+    state.timelineManager.clear()
+    state.feedManager.clear()
+    state.sessions.clear()
+
+    // Start replay
+    replayController.enterReplay(events)
+
+    // Show replay controls
+    const replayPanel = document.getElementById('replay-panel')
+    if (replayPanel) {
+      replayPanel.classList.remove('hidden')
+    }
+
+    // Update UI
+    updateStatus(true, 'Replay Mode')
+    updateActivity('Replaying session history...')
+
+    console.log(`Entered replay mode with ${events.length} events`)
+    toast.success(`Replaying ${events.length} events`)
+
+  } catch (error) {
+    console.error('Failed to enter replay mode:', error)
+    toast.error('Failed to load history for replay')
+  }
+}
+
+/**
+ * Exit replay mode - restore scene state and resume live
+ */
+function exitReplayMode(): void {
+  if (replayController.getState().mode === 'live') {
+    console.warn('Not in replay mode')
+    return
+  }
+
+  // Stop replay
+  replayController.exitReplay()
+
+  // Hide replay controls
+  const replayPanel = document.getElementById('replay-panel')
+  if (replayPanel) {
+    replayPanel.classList.add('hidden')
+  }
+
+  // Restore scene state if we have a snapshot
+  if (state.replaySnapshot && state.replaySceneManager && state.scene) {
+    // Clear replay state first
+    state.replaySceneManager.resetForReplay()
+    state.sessions.clear()
+
+    // Restore from snapshot
+    state.replaySceneManager.restoreSnapshot(state.replaySnapshot)
+    state.replaySnapshot = null
+  }
+
+  // Clear and reconnect
+  state.timelineManager?.clear()
+  state.feedManager?.clear()
+
+  // Reconnect to live events
+  if (state.client) {
+    state.client.connect()
+  }
+
+  // Update UI
+  updateActivity('Resumed live mode')
+
+  console.log('Exited replay mode, returned to live')
+  toast.success('Returned to live mode')
+}
+
 /**
  * Try to link a Claude session to a managed session
  * Uses timing: looks for unlinked managed sessions created in the last 30 seconds
@@ -2468,6 +2605,13 @@ function setupSettingsModal(): void {
     closeModal()
   })
 
+  // Replay history button
+  const replayBtn = document.getElementById('settings-replay-history')
+  replayBtn?.addEventListener('click', async () => {
+    closeModal()
+    await enterReplayMode()
+  })
+
   // Escape to close
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && modal.classList.contains('visible')) {
@@ -2660,6 +2804,29 @@ function init() {
   // Initialize feed manager
   state.feedManager = new FeedManager()
   state.feedManager.setupScrollButton()
+
+  // Initialize replay controls
+  state.replayControls = setupReplayControls({
+    onExit: exitReplayMode,
+  })
+
+  // Subscribe to replay events - process events during replay playback
+  replayController.onEvent((event) => {
+    // Process event through the normal handler during replay
+    handleEvent(event)
+  })
+
+  // Update timeline highlighting when replay state changes
+  // (ReplayControls updates itself automatically via internal subscription)
+  replayController.onStateChange((replayState) => {
+    if (state.timelineManager) {
+      if (replayState.mode !== 'live') {
+        state.timelineManager.highlightIcon(replayState.currentIndex)
+      } else {
+        state.timelineManager.clearHighlight()
+      }
+    }
+  })
 
   // Register EventBus handlers (decoupled event handling)
   registerAllHandlers()
@@ -2950,6 +3117,22 @@ function init() {
     onUpdateAttentionBadge: updateAttentionBadge,
     onSetUserChangedCamera: (value) => { state.userChangedCamera = value },
     onInterruptSession: interruptSession,
+  })
+
+  // Shift+R to toggle replay mode
+  document.addEventListener('keydown', async (e) => {
+    if (e.shiftKey && (e.key === 'r' || e.key === 'R')) {
+      const inInput = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement
+      if (inInput) return
+
+      e.preventDefault()
+      const currentMode = replayController.getState().mode
+      if (currentMode === 'live') {
+        await enterReplayMode()
+      } else {
+        exitReplayMode()
+      }
+    }
   })
 
   // Setup click-to-prompt and context menu

@@ -180,6 +180,47 @@ export class FeedManager {
   }
 
   /**
+   * Clear all feed items and state (used for replay mode)
+   */
+  clear(): void {
+    if (!this.feedEl) return
+
+    // Remove all feed items (but keep the empty state if it exists)
+    const items = this.feedEl.querySelectorAll('.feed-item')
+    items.forEach(item => item.remove())
+
+    // Clear tracking state
+    this.eventIds.clear()
+    this.pendingItems.clear()
+    this.completedData.clear()
+    this.thinkingIndicators.clear()
+    this.lastAssistantText = null
+    this.lastAssistantTextTime = 0
+
+    // Reset empty state
+    this.restoreEmptyState()
+  }
+
+  /**
+   * Restore the empty state placeholder
+   */
+  private restoreEmptyState(): void {
+    if (!this.feedEl) return
+
+    // Check if empty state already exists
+    if (document.getElementById('feed-empty')) return
+
+    const emptyState = document.createElement('div')
+    emptyState.id = 'feed-empty'
+    emptyState.innerHTML = `
+      <div id="feed-empty-icon">🛠️</div>
+      <h3>Waiting for activity</h3>
+      <p>Start using Claude Code to see events here</p>
+    `
+    this.feedEl.appendChild(emptyState)
+  }
+
+  /**
    * Remove the empty state placeholder
    */
   private removeEmptyState(): void {

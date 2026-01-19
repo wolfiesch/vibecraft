@@ -1,0 +1,282 @@
+/* Replay Controls Panel */
+
+#replay-panel {
+  position: absolute;
+  bottom: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 20px;
+  background: rgba(15, 23, 42, 0.95);
+  border: 1px solid rgba(74, 200, 232, 0.3);
+  border-radius: 12px;
+  backdrop-filter: blur(8px);
+  z-index: 100;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+}
+
+#replay-panel.hidden {
+  display: none;
+}
+
+/* Replay badge indicator */
+.replay-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  background: rgba(167, 139, 250, 0.2);
+  border: 1px solid rgba(167, 139, 250, 0.4);
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #a78bfa;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.replay-badge::before {
+  content: '●';
+  font-size: 8px;
+  animation: replay-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes replay-pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
+/* Control buttons */
+.replay-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  background: rgba(74, 200, 232, 0.1);
+  border: 1px solid rgba(74, 200, 232, 0.3);
+  border-radius: 8px;
+  color: #4ac8e8;
+  font-size: 16px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.replay-btn:hover:not(:disabled) {
+  background: rgba(74, 200, 232, 0.2);
+  border-color: rgba(74, 200, 232, 0.5);
+  transform: scale(1.05);
+}
+
+.replay-btn:active:not(:disabled) {
+  transform: scale(0.95);
+}
+
+.replay-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.replay-btn-play {
+  width: 44px;
+  height: 44px;
+  font-size: 20px;
+  background: rgba(74, 200, 232, 0.15);
+}
+
+/* Scrubber track */
+.replay-scrubber-container {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 200px;
+}
+
+#replay-scrubber {
+  flex: 1;
+  height: 6px;
+  background: rgba(74, 200, 232, 0.15);
+  border-radius: 3px;
+  outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+  cursor: pointer;
+}
+
+#replay-scrubber::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  background: #4ac8e8;
+  border-radius: 50%;
+  cursor: grab;
+  box-shadow: 0 2px 8px rgba(74, 200, 232, 0.4);
+  transition: transform 0.1s ease;
+}
+
+#replay-scrubber::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+}
+
+#replay-scrubber::-webkit-slider-thumb:active {
+  cursor: grabbing;
+  transform: scale(1.1);
+}
+
+#replay-scrubber::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  background: #4ac8e8;
+  border: none;
+  border-radius: 50%;
+  cursor: grab;
+}
+
+/* Time display */
+#replay-time {
+  font-size: 12px;
+  font-family: 'SF Mono', 'Menlo', monospace;
+  color: rgba(255, 255, 255, 0.7);
+  min-width: 80px;
+  text-align: center;
+}
+
+/* Event counter */
+#replay-event-counter {
+  font-size: 11px;
+  font-family: 'SF Mono', 'Menlo', monospace;
+  color: rgba(255, 255, 255, 0.5);
+  min-width: 60px;
+  text-align: center;
+}
+
+/* Speed select */
+#replay-speed {
+  padding: 6px 10px;
+  background: rgba(74, 200, 232, 0.1);
+  border: 1px solid rgba(74, 200, 232, 0.3);
+  border-radius: 6px;
+  color: #4ac8e8;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  outline: none;
+}
+
+#replay-speed:hover {
+  background: rgba(74, 200, 232, 0.15);
+}
+
+#replay-speed option {
+  background: #0f172a;
+  color: #fff;
+}
+
+/* Exit/Live button */
+.replay-btn-exit {
+  padding: 6px 14px;
+  width: auto;
+  background: rgba(251, 191, 36, 0.15);
+  border-color: rgba(251, 191, 36, 0.4);
+  color: #fbbf24;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.replay-btn-exit:hover {
+  background: rgba(251, 191, 36, 0.25);
+  border-color: rgba(251, 191, 36, 0.6);
+}
+
+/* Divider between sections */
+.replay-divider {
+  width: 1px;
+  height: 24px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* Timeline scrubber overlay (shown during replay) */
+.timeline-scrubber-overlay {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  background: rgba(167, 139, 250, 0.1);
+  border: 1px solid rgba(167, 139, 250, 0.3);
+  border-radius: 4px;
+  pointer-events: none;
+}
+
+/* Playhead marker on timeline */
+.timeline-playhead {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: #a78bfa;
+  pointer-events: none;
+  z-index: 10;
+  transition: left 0.1s linear;
+}
+
+.timeline-playhead::before {
+  content: '';
+  position: absolute;
+  top: -4px;
+  left: -4px;
+  width: 10px;
+  height: 10px;
+  background: #a78bfa;
+  border-radius: 50%;
+}
+
+/* Replay mode indicator in scene HUD */
+.replay-indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  background: rgba(167, 139, 250, 0.2);
+  border-radius: 4px;
+  color: #a78bfa;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.replay-indicator.hidden {
+  display: none;
+}
+
+/* Timeline icon highlighting during replay */
+.timeline-icon.replay-current {
+  box-shadow: 0 0 0 2px #a78bfa, 0 0 12px rgba(167, 139, 250, 0.5);
+  transform: scale(1.1);
+}
+
+/* Empty state message */
+.replay-empty {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.replay-empty h3 {
+  margin: 0 0 8px;
+  font-size: 18px;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.replay-empty p {
+  margin: 0;
+  font-size: 14px;
+}
