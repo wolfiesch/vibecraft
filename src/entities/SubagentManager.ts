@@ -1,10 +1,12 @@
 /**
  * SubagentManager - Manages subagent visualizations
  *
- * Tracks Task tool spawns and creates mini-Claude instances for each active subagent
+ * Tracks Task tool spawns and creates mini-Claude instances for each active subagent.
+ * Subagents are positioned within the parent session's zone at the portal station.
  */
 
-import type { WorkshopScene } from '../scene/WorkshopScene'
+import type { WorkshopScene, Station } from '../scene/WorkshopScene'
+import type { StationType } from '../../shared/types'
 import { Claude, type ClaudeOptions } from './Claude'
 
 export interface Subagent {
@@ -27,11 +29,13 @@ const SUBAGENT_COLORS = [
 
 export class SubagentManager {
   private scene: WorkshopScene
+  private zoneStations: Map<StationType, Station>
   private subagents: Map<string, Subagent> = new Map()
   private colorIndex = 0
 
-  constructor(scene: WorkshopScene) {
+  constructor(scene: WorkshopScene, zoneStations: Map<StationType, Station>) {
     this.scene = scene
+    this.zoneStations = zoneStations
   }
 
   /**
@@ -58,9 +62,15 @@ export class SubagentManager {
     const claude = new Claude(this.scene, options)
     claude.setState('thinking')
 
-    // Offset position slightly so they don't overlap
+    // Position at the zone's portal station (not global station)
+    const portalStation = this.zoneStations.get('portal')
+    if (portalStation) {
+      claude.mesh.position.copy(portalStation.position)
+    }
+
+    // Offset position slightly so they don't overlap (fan out from portal)
     const offset = this.subagents.size * 0.5
-    const angle = (this.subagents.size * Math.PI * 0.4) // Fan out
+    const angle = this.subagents.size * Math.PI * 0.4 // Fan out
     claude.mesh.position.x += Math.sin(angle) * offset
     claude.mesh.position.z += Math.cos(angle) * offset
 

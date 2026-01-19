@@ -10,7 +10,7 @@ import * as THREE from 'three'
 import { WorkshopScene, ZONE_COLORS, type Zone, type CameraMode } from './scene/WorkshopScene'
 // Character model - swap by changing the import:
 // import { Claude } from './entities/Claude'      // Original simple character
-import { Claude } from './entities/ClaudeMon'      // Robot buddy character
+import { Claude } from './entities/ClaudeMon' // Robot buddy character
 import { SubagentManager } from './entities/SubagentManager'
 import { EventClient } from './events/EventClient'
 import { eventBus, type EventContext, type EventType } from './events/EventBus'
@@ -40,15 +40,8 @@ import {
   type QuestionData,
 } from './ui/QuestionModal'
 import { toast } from './ui/Toast'
-import {
-  setupZoneInfoModal,
-  showZoneInfoModal,
-  setZoneInfoSoundEnabled,
-} from './ui/ZoneInfoModal'
-import {
-  setupZoneCommandModal,
-  showZoneCommandModal,
-} from './ui/ZoneCommandModal'
+import { setupZoneInfoModal, showZoneInfoModal, setZoneInfoSoundEnabled } from './ui/ZoneInfoModal'
+import { setupZoneCommandModal, showZoneCommandModal } from './ui/ZoneCommandModal'
 import {
   setupPermissionModal,
   showPermissionModal,
@@ -90,9 +83,7 @@ const WS_URL = import.meta.env.DEV
   ? `ws://${window.location.host}/ws`
   : `ws://localhost:${AGENT_PORT}`
 
-const API_URL = import.meta.env.DEV
-  ? '/api'
-  : `http://localhost:${AGENT_PORT}`
+const API_URL = import.meta.env.DEV ? '/api' : `http://localhost:${AGENT_PORT}`
 
 // Create session API instance
 const sessionAPI = createSessionAPI(API_URL)
@@ -118,26 +109,26 @@ interface AppState {
   scene: WorkshopScene | null
   client: EventClient | null
   sessions: Map<string, SessionState>
-  focusedSessionId: string | null  // Currently focused session for camera/prompts
+  focusedSessionId: string | null // Currently focused session for camera/prompts
   eventHistory: ClaudeEvent[]
-  managedSessions: ManagedSession[]  // Managed sessions from server
-  selectedManagedSession: string | null  // Selected managed session ID for prompts
-  serverCwd: string  // Server's working directory
-  attentionSystem: AttentionSystem | null  // Manages attention queue and notifications
-  timelineManager: TimelineManager | null  // Manages icon timeline
-  feedManager: FeedManager | null  // Manages activity feed
-  soundEnabled: boolean  // Whether to play sounds
-  hasAutoOverviewed: boolean  // Whether we've done initial auto-overview for 2+ sessions
-  userChangedCamera: boolean  // Whether user has manually changed camera (to avoid overriding)
-  voice: VoiceState | null  // Voice input state and controls
-  lastPrompts: Map<string, string>  // Last prompt sent per Claude session ID
-  promptHistory: string[]  // History of sent prompts for up/down navigation
-  historyIndex: number  // Current position in history (-1 = not navigating)
-  historyDraft: string  // Saved draft when navigating history
+  managedSessions: ManagedSession[] // Managed sessions from server
+  selectedManagedSession: string | null // Selected managed session ID for prompts
+  serverCwd: string // Server's working directory
+  attentionSystem: AttentionSystem | null // Manages attention queue and notifications
+  timelineManager: TimelineManager | null // Manages icon timeline
+  feedManager: FeedManager | null // Manages activity feed
+  soundEnabled: boolean // Whether to play sounds
+  hasAutoOverviewed: boolean // Whether we've done initial auto-overview for 2+ sessions
+  userChangedCamera: boolean // Whether user has manually changed camera (to avoid overriding)
+  voice: VoiceState | null // Voice input state and controls
+  lastPrompts: Map<string, string> // Last prompt sent per Claude session ID
+  promptHistory: string[] // History of sent prompts for up/down navigation
+  historyIndex: number // Current position in history (-1 = not navigating)
+  historyDraft: string // Saved draft when navigating history
   // Replay mode state
-  replaySceneManager: ReplaySceneManager | null  // Manages scene state during replay
-  replayControls: ReplayControls | null  // UI controls for replay
-  replaySnapshot: SceneSnapshot | null  // Snapshot of scene state before replay
+  replaySceneManager: ReplaySceneManager | null // Manages scene state during replay
+  replayControls: ReplayControls | null // UI controls for replay
+  replaySnapshot: SceneSnapshot | null // Snapshot of scene state before replay
 }
 
 const state: AppState = {
@@ -149,13 +140,13 @@ const state: AppState = {
   serverCwd: '~',
   managedSessions: [],
   selectedManagedSession: null,
-  attentionSystem: null,  // Initialized in init()
-  timelineManager: null,  // Initialized in init()
-  feedManager: null,  // Initialized in init()
+  attentionSystem: null, // Initialized in init()
+  timelineManager: null, // Initialized in init()
+  feedManager: null, // Initialized in init()
   soundEnabled: true,
   hasAutoOverviewed: false,
   userChangedCamera: false,
-  voice: null,  // Initialized in setupVoiceInput()
+  voice: null, // Initialized in setupVoiceInput()
   lastPrompts: new Map(),
   promptHistory: [],
   historyIndex: -1,
@@ -200,7 +191,7 @@ function renderManagedSessions(): void {
   const allCount = document.getElementById('all-sessions-count')
   if (allCount) {
     const count = state.managedSessions.length
-    const working = state.managedSessions.filter(s => s.status === 'working').length
+    const working = state.managedSessions.filter((s) => s.status === 'working').length
     if (count === 0) {
       allCount.textContent = 'Click "+ New" to start'
     } else if (working > 0) {
@@ -221,7 +212,7 @@ function renderManagedSessions(): void {
   state.managedSessions.forEach((session, index) => {
     const el = document.createElement('div')
     el.className = 'session-item'
-    el.dataset.sessionId = session.id  // For targeted DOM updates (e.g., token updates)
+    el.dataset.sessionId = session.id // For targeted DOM updates (e.g., token updates)
     if (session.id === state.selectedManagedSession) {
       el.classList.add('active')
     }
@@ -238,9 +229,7 @@ function renderManagedSessions(): void {
     const isImplicit = session.implicit === true
 
     // Time since last activity (needed for detail line)
-    const lastActive = session.lastActivity
-      ? formatTimeAgo(session.lastActivity)
-      : ''
+    const lastActive = session.lastActivity ? formatTimeAgo(session.lastActivity) : ''
 
     // Build detail line with status and project
     const projectName = session.cwd ? session.cwd.split('/').pop() : ''
@@ -256,15 +245,23 @@ function renderManagedSessions(): void {
     } else {
       detail = projectName ? `📁 ${projectName}` : 'Ready'
     }
-    const detailClass = session.status === 'working' ? 'session-detail working'
-      : session.status === 'waiting' ? 'session-detail attention'
-      : needsAttention ? 'session-detail attention'
-      : 'session-detail'
+    const detailClass =
+      session.status === 'working'
+        ? 'session-detail working'
+        : session.status === 'waiting'
+          ? 'session-detail attention'
+          : needsAttention
+            ? 'session-detail attention'
+            : 'session-detail'
 
     // Get last prompt for this session (via claudeSessionId)
-    const lastPrompt = session.claudeSessionId ? state.lastPrompts.get(session.claudeSessionId) : null
+    const lastPrompt = session.claudeSessionId
+      ? state.lastPrompts.get(session.claudeSessionId)
+      : null
     const truncatedPrompt = lastPrompt
-      ? (lastPrompt.length > 35 ? lastPrompt.slice(0, 32) + '...' : lastPrompt)
+      ? lastPrompt.length > 35
+        ? lastPrompt.slice(0, 32) + '...'
+        : lastPrompt
       : null
 
     // Token display (if available)
@@ -277,10 +274,14 @@ function renderManagedSessions(): void {
       `Name: ${session.name}`,
       `Status: ${session.status}`,
       session.implicit ? '🔗 External Claude (no tmux control)' : `tmux: ${session.tmuxSession}`,
-      session.claudeSessionId ? `Claude ID: ${session.claudeSessionId.slice(0, 12)}...` : 'Not linked yet',
+      session.claudeSessionId
+        ? `Claude ID: ${session.claudeSessionId.slice(0, 12)}...`
+        : 'Not linked yet',
       session.cwd ? `Dir: ${session.cwd}` : '',
       session.lastActivity ? `Last active: ${new Date(session.lastActivity).toLocaleString()}` : '',
-      session.tokens ? `Tokens: ${session.tokens.current.toLocaleString()} current, ${session.tokens.cumulative.toLocaleString()} total` : '',
+      session.tokens
+        ? `Tokens: ${session.tokens.current.toLocaleString()} current, ${session.tokens.cumulative.toLocaleString()} total`
+        : '',
       lastPrompt ? `Last prompt: ${lastPrompt}` : '',
     ].filter(Boolean)
     el.title = tooltipParts.join('\n')
@@ -359,7 +360,7 @@ function selectManagedSession(sessionId: string | null): void {
 
   // Update feed filter to show only this session's events (or all if null)
   if (sessionId) {
-    const session = state.managedSessions.find(s => s.id === sessionId)
+    const session = state.managedSessions.find((s) => s.id === sessionId)
     // Filter by claudeSessionId if available, otherwise show nothing (session has no events yet)
     state.feedManager?.setFilter(session?.claudeSessionId ?? '__none__')
 
@@ -369,7 +370,7 @@ function selectManagedSession(sessionId: string | null): void {
       focusSession(session.claudeSessionId)
     }
   } else {
-    state.feedManager?.setFilter(null)  // Show all sessions
+    state.feedManager?.setFilter(null) // Show all sessions
 
     // Switch to overview mode showing all zones
     if (state.scene) {
@@ -469,7 +470,10 @@ async function renameManagedSession(sessionId: string, name: string): Promise<vo
 /**
  * Save zone position for a managed session (persists grid layout)
  */
-async function saveZonePosition(sessionId: string, position: { q: number; r: number }): Promise<void> {
+async function saveZonePosition(
+  sessionId: string,
+  position: { q: number; r: number }
+): Promise<void> {
   const data = await sessionAPI.saveZonePosition(sessionId, position)
   if (!data.ok) {
     console.error('Failed to save zone position:', data.error)
@@ -532,7 +536,10 @@ async function restartManagedSession(sessionId: string, sessionName: string): Pr
 /**
  * Send a prompt to the selected managed session
  */
-async function sendPromptToManagedSession(prompt: string, sessionId?: string): Promise<{ ok: boolean; error?: string }> {
+async function sendPromptToManagedSession(
+  prompt: string,
+  sessionId?: string
+): Promise<{ ok: boolean; error?: string }> {
   const targetSession = sessionId ?? state.selectedManagedSession
   if (!targetSession) {
     return { ok: false, error: 'No session selected' }
@@ -553,7 +560,7 @@ function goToNextAttention(): void {
   if (!session) return
 
   // Select and focus
-  state.userChangedCamera = true  // User intentionally chose this view
+  state.userChangedCamera = true // User intentionally chose this view
   selectManagedSession(session.id)
   if (session.claudeSessionId && state.scene) {
     state.scene.focusZone(session.claudeSessionId)
@@ -630,7 +637,7 @@ function setupManagedSessions(): void {
             // Check for duplicate names and add suffix if needed
             let name = basename
             let suffix = 1
-            while (state.managedSessions.some(s => s.name === name)) {
+            while (state.managedSessions.some((s) => s.name === name)) {
               suffix++
               name = `${basename} ${suffix}`
             }
@@ -649,7 +656,7 @@ function setupManagedSessions(): void {
 
   const closeModal = (): void => {
     modal?.classList.remove('visible')
-    currentModalHint = null  // Clear hint when modal closes
+    currentModalHint = null // Clear hint when modal closes
   }
 
   const handleCreate = (): void => {
@@ -784,7 +791,7 @@ function handleContextMenuAction(action: string, context: ContextMenuContext): v
  */
 function showZoneInfo(sessionId: string): void {
   // Find the managed session
-  const managed = state.managedSessions.find(s => s.claudeSessionId === sessionId)
+  const managed = state.managedSessions.find((s) => s.claudeSessionId === sessionId)
   if (!managed) {
     console.warn('No managed session found for zone:', sessionId)
     return
@@ -805,7 +812,7 @@ function showZoneInfo(sessionId: string): void {
  */
 function showZoneCommand(sessionId: string): void {
   // Find the managed session
-  const managed = state.managedSessions.find(s => s.claudeSessionId === sessionId)
+  const managed = state.managedSessions.find((s) => s.claudeSessionId === sessionId)
   if (!managed) {
     console.warn('No managed session found for zone:', sessionId)
     return
@@ -859,7 +866,7 @@ async function createTextTileAtHex(hex: { q: number; r: number }): Promise<void>
  * Edit an existing text tile
  */
 async function editTextTile(tileId: string): Promise<void> {
-  const tile = state.scene?.getTextTiles().find(t => t.id === tileId)
+  const tile = state.scene?.getTextTiles().find((t) => t.id === tileId)
   if (!tile) return
 
   const text = await showTextLabelModal({
@@ -898,9 +905,7 @@ async function deleteTextTile(tileId: string): Promise<void> {
  */
 async function deleteZoneBySessionId(zoneId: string): Promise<void> {
   // Find the managed session for this zone
-  const managedSession = state.managedSessions.find(
-    s => s.claudeSessionId === zoneId
-  )
+  const managedSession = state.managedSessions.find((s) => s.claudeSessionId === zoneId)
 
   if (!managedSession) {
     console.warn('No managed session found for zone:', zoneId)
@@ -932,11 +937,11 @@ function setupClickToPrompt(): void {
 
   // Track mousedown position to distinguish clicks from drags
   let mouseDownPos: { x: number; y: number } | null = null
-  const CLICK_THRESHOLD = 5  // pixels - if moved more than this, it's a drag
+  const CLICK_THRESHOLD = 5 // pixels - if moved more than this, it's a drag
 
   // Draw mode drag painting state
   let isDrawModeDragging = false
-  const paintedThisDrag = new Set<string>()  // Track hexes painted during current drag
+  const paintedThisDrag = new Set<string>() // Track hexes painted during current drag
 
   // Debounced save for hex art persistence (includes zone elevations)
   let hexArtSaveTimer: ReturnType<typeof setTimeout> | null = null
@@ -949,8 +954,10 @@ function setupClickToPrompt(): void {
       localStorage.setItem('vibecraft-hexart', JSON.stringify(hexes))
       localStorage.setItem('vibecraft-zone-elevations', JSON.stringify(zoneElevations))
       const elevCount = Object.keys(zoneElevations).length
-      console.log(`Saved ${hexes.length} painted hexes and ${elevCount} zone elevations to localStorage`)
-    }, 500)  // Debounce 500ms
+      console.log(
+        `Saved ${hexes.length} painted hexes and ${elevCount} zone elevations to localStorage`
+      )
+    }, 500) // Debounce 500ms
   }
 
   // Helper to paint with brush size
@@ -1049,12 +1056,12 @@ function setupClickToPrompt(): void {
       // Check both floor and painted hexes (for painting on top of existing)
       const floorIntersects = raycaster.intersectObject(state.scene.worldFloor)
       const paintedHexMeshes = state.scene.getPaintedHexMeshes()
-      const paintedIntersects = paintedHexMeshes.length > 0
-        ? raycaster.intersectObjects(paintedHexMeshes)
-        : []
+      const paintedIntersects =
+        paintedHexMeshes.length > 0 ? raycaster.intersectObjects(paintedHexMeshes) : []
 
-      const allIntersects = [...floorIntersects, ...paintedIntersects]
-        .sort((a, b) => a.distance - b.distance)
+      const allIntersects = [...floorIntersects, ...paintedIntersects].sort(
+        (a, b) => a.distance - b.distance
+      )
 
       if (allIntersects.length > 0) {
         const point = allIntersects[0].point
@@ -1097,7 +1104,7 @@ function setupClickToPrompt(): void {
     for (const [sessionId, zone] of state.scene.zones) {
       const intersects = raycaster.intersectObject(zone.group, true)
       if (intersects.length > 0) {
-        state.userChangedCamera = true  // User clicked to select
+        state.userChangedCamera = true // User clicked to select
         state.scene!.focusZone(sessionId)
         focusSession(sessionId)
 
@@ -1107,7 +1114,7 @@ function setupClickToPrompt(): void {
         }
 
         // Select the managed session if linked, otherwise clear selection
-        const managed = state.managedSessions.find(s => s.claudeSessionId === sessionId)
+        const managed = state.managedSessions.find((s) => s.claudeSessionId === sessionId)
         if (managed) {
           selectManagedSession(managed.id)
           state.attentionSystem?.remove(managed.id)
@@ -1124,7 +1131,7 @@ function setupClickToPrompt(): void {
     for (const [sessionId, session] of state.sessions) {
       const intersects = raycaster.intersectObject(session.claude.mesh, true)
       if (intersects.length > 0) {
-        state.userChangedCamera = true  // User clicked to select
+        state.userChangedCamera = true // User clicked to select
         state.scene!.focusZone(sessionId)
         focusSession(sessionId)
 
@@ -1133,7 +1140,7 @@ function setupClickToPrompt(): void {
           soundManager.play('focus')
         }
 
-        const managed = state.managedSessions.find(s => s.claudeSessionId === sessionId)
+        const managed = state.managedSessions.find((s) => s.claudeSessionId === sessionId)
         if (managed) {
           selectManagedSession(managed.id)
           state.attentionSystem?.remove(managed.id)
@@ -1152,13 +1159,13 @@ function setupClickToPrompt(): void {
       // Check both floor and painted hexes (painted hexes block floor raycast)
       const floorIntersects = raycaster.intersectObject(state.scene.worldFloor)
       const paintedHexMeshes = state.scene.getPaintedHexMeshes()
-      const paintedIntersects = paintedHexMeshes.length > 0
-        ? raycaster.intersectObjects(paintedHexMeshes)
-        : []
+      const paintedIntersects =
+        paintedHexMeshes.length > 0 ? raycaster.intersectObjects(paintedHexMeshes) : []
 
       // Use whichever hit is closest (painted hex is usually on top of floor)
-      const allIntersects = [...floorIntersects, ...paintedIntersects]
-        .sort((a, b) => a.distance - b.distance)
+      const allIntersects = [...floorIntersects, ...paintedIntersects].sort(
+        (a, b) => a.distance - b.distance
+      )
 
       if (allIntersects.length > 0) {
         const point = allIntersects[0].point
@@ -1205,14 +1212,14 @@ function setupClickToPrompt(): void {
   // Right-click handler for zones (delete menu)
   state.scene.renderer.domElement.addEventListener('contextmenu', (event) => {
     if (!state.scene) return
-    event.preventDefault()  // Prevent browser context menu
+    event.preventDefault() // Prevent browser context menu
 
     raycastFromMouse(event)
     const sessionId = findClickedZone()
 
     if (sessionId) {
       // Find the managed session name for display
-      const managed = state.managedSessions.find(s => s.claudeSessionId === sessionId)
+      const managed = state.managedSessions.find((s) => s.claudeSessionId === sessionId)
       const zoneName = managed?.name || sessionId.slice(0, 8)
 
       // Show context menu with command, info, and delete options
@@ -1309,7 +1316,7 @@ function setupDevPanel(): void {
         const target = getTargetClaude()
         if (target) {
           target.playIdleBehavior(name)
-          document.querySelectorAll('.dev-anim-btn').forEach(b => b.classList.remove('playing'))
+          document.querySelectorAll('.dev-anim-btn').forEach((b) => b.classList.remove('playing'))
           btn.classList.add('playing')
           setTimeout(() => btn.classList.remove('playing'), 2000)
         }
@@ -1332,7 +1339,7 @@ function setupDevPanel(): void {
         const target = getTargetClaude()
         if (target) {
           target.playWorkingBehavior(station)
-          document.querySelectorAll('.dev-anim-btn').forEach(b => b.classList.remove('playing'))
+          document.querySelectorAll('.dev-anim-btn').forEach((b) => b.classList.remove('playing'))
           btn.classList.add('playing')
           // Working behaviors loop, so keep playing indicator longer
           setTimeout(() => btn.classList.remove('playing'), 4000)
@@ -1349,7 +1356,7 @@ function setupDevPanel(): void {
       const target = getTargetClaude()
       if (target) {
         target.setState('idle')
-        document.querySelectorAll('.dev-anim-btn').forEach(b => b.classList.remove('playing'))
+        document.querySelectorAll('.dev-anim-btn').forEach((b) => b.classList.remove('playing'))
       }
     })
     animationsContainer.appendChild(stopBtn)
@@ -1387,14 +1394,14 @@ function getOrCreateSession(sessionId: string, eventCwd?: string): SessionState 
   // If no existing managed session, check if server needs to create an implicit one
   if (!linkedManagedSession) {
     // Check if this session is already known to any managed session (including implicit ones)
-    const alreadyKnown = state.managedSessions.some(m => m.claudeSessionId === sessionId)
+    const alreadyKnown = state.managedSessions.some((m) => m.claudeSessionId === sessionId)
     if (!alreadyKnown) {
       // Unlinked external session - create an implicit session on the server
       // The server will broadcast the new session, and subsequent events will link properly
       if (!pendingImplicitCreations.has(sessionId)) {
         pendingImplicitCreations.add(sessionId)
         console.log(`Creating implicit session for external Claude ${sessionId.slice(0, 8)}`)
-        sessionAPI.createImplicitSession(sessionId, eventCwd).then(result => {
+        sessionAPI.createImplicitSession(sessionId, eventCwd).then((result) => {
           pendingImplicitCreations.delete(sessionId)
           if (!result.ok) {
             console.error(`Failed to create implicit session: ${result.error}`)
@@ -1406,7 +1413,7 @@ function getOrCreateSession(sessionId: string, eventCwd?: string): SessionState 
     }
     // Session is known (from server broadcast) but not yet linked locally
     // Try to find and link it
-    const managed = state.managedSessions.find(m => m.claudeSessionId === sessionId)
+    const managed = state.managedSessions.find((m) => m.claudeSessionId === sessionId)
     if (managed) {
       claudeToManagedLink.set(sessionId, managed.id)
       linkedManagedSession = managed
@@ -1425,7 +1432,10 @@ function getOrCreateSession(sessionId: string, eventCwd?: string): SessionState 
       // Convert hex coords back to cartesian for hint
       const cartesian = state.scene.hexGrid.axialToCartesian(linkedManagedSession.zonePosition)
       hintPosition = { x: cartesian.x, z: cartesian.z }
-      console.log(`Restoring zone position for "${linkedManagedSession.name}" at hex`, linkedManagedSession.zonePosition)
+      console.log(
+        `Restoring zone position for "${linkedManagedSession.name}" at hex`,
+        linkedManagedSession.zonePosition
+      )
     } else {
       // Fall back to pending hints (from modal click)
       hintPosition = pendingZoneHints.get(linkedManagedSession.name)
@@ -1489,8 +1499,8 @@ function getOrCreateSession(sessionId: string, eventCwd?: string): SessionState 
     claude.mesh.position.copy(centerStation.position)
   }
 
-  // Create subagent manager
-  const subagents = new SubagentManager(state.scene)
+  // Create subagent manager with zone's stations for proper positioning
+  const subagents = new SubagentManager(state.scene, zone.stations)
 
   session = {
     claude,
@@ -1505,7 +1515,9 @@ function getOrCreateSession(sessionId: string, eventCwd?: string): SessionState 
   }
 
   state.sessions.set(sessionId, session)
-  console.log(`Created session ${sessionId.slice(0, 8)} (color: #${zone.color.toString(16)}, position: ${zone.position.x}, ${zone.position.z})`)
+  console.log(
+    `Created session ${sessionId.slice(0, 8)} (color: #${zone.color.toString(16)}, position: ${zone.position.x}, ${zone.position.z})`
+  )
 
   // Focus on first session
   if (state.sessions.size === 1) {
@@ -1591,7 +1603,6 @@ async function enterReplayMode(): Promise<void> {
 
     console.log(`Entered replay mode with ${events.length} events`)
     toast.success(`Replaying ${events.length} events`)
-
   } catch (error) {
     console.error('Failed to enter replay mode:', error)
     toast.error('Failed to load history for replay')
@@ -1654,7 +1665,7 @@ function tryLinkToManagedSession(claudeSessionId: string): ManagedSession | null
   // Check if already linked
   if (claudeToManagedLink.has(claudeSessionId)) {
     const managedId = claudeToManagedLink.get(claudeSessionId)!
-    return state.managedSessions.find(s => s.id === managedId) || null
+    return state.managedSessions.find((s) => s.id === managedId) || null
   }
 
   // Find unlinked managed sessions created recently
@@ -1737,12 +1748,12 @@ function syncZoneLabels(): void {
   // Second pass: for unlinked zones, try to match by index
   // Get zones that aren't linked to any managed session
   const linkedClaudeIds = new Set(
-    managedSessions.filter(m => m.claudeSessionId).map(m => m.claudeSessionId)
+    managedSessions.filter((m) => m.claudeSessionId).map((m) => m.claudeSessionId)
   )
   const unlinkedZones = zones.filter(([id]) => !linkedClaudeIds.has(id))
 
   // Get managed sessions that don't have a claudeSessionId link
-  const unlinkedManaged = managedSessions.filter(m => !m.claudeSessionId)
+  const unlinkedManaged = managedSessions.filter((m) => !m.claudeSessionId)
 
   // Match by index (first unlinked zone → first unlinked managed, etc.)
   for (let i = 0; i < Math.min(unlinkedZones.length, unlinkedManaged.length); i++) {
@@ -1784,7 +1795,7 @@ function focusSession(sessionId: string): void {
 
   // Play a random idle animation when zone becomes active (if Claude is idle)
   if (session.claude.state === 'idle' && 'playRandomIdleBehavior' in session.claude) {
-    (session.claude as { playRandomIdleBehavior: () => void }).playRandomIdleBehavior()
+    ;(session.claude as { playRandomIdleBehavior: () => void }).playRandomIdleBehavior()
   }
 
   // Update HUD
@@ -1810,7 +1821,7 @@ function updatePromptTarget(sessionId: string, color: number): void {
   if (!targetEl) return
 
   // Look up managed session to get name and index
-  const managed = state.managedSessions.find(s => s.claudeSessionId === sessionId)
+  const managed = state.managedSessions.find((s) => s.claudeSessionId === sessionId)
   const colorHex = `#${color.toString(16).padStart(6, '0')}`
 
   if (managed) {
@@ -1942,14 +1953,16 @@ function handleEvent(event: ClaudeEvent) {
     feedManager: state.feedManager,
     timelineManager: state.timelineManager,
     soundEnabled: state.soundEnabled,
-    session: session ? {
-      id: event.sessionId,
-      color: session.color,
-      claude: session.claude,
-      subagents: session.subagents,
-      zone: session.zone,
-      stats: session.stats,
-    } : null,
+    session: session
+      ? {
+          id: event.sessionId,
+          color: session.color,
+          claude: session.claude,
+          subagents: session.subagents,
+          zone: session.zone,
+          stats: session.stats,
+        }
+      : null,
   }
   eventBus.emit(event.type as EventType, event as any, eventContext)
 
@@ -1994,7 +2007,7 @@ function handleEvent(event: ClaudeEvent) {
         if (toolInput.questions && toolInput.questions.length > 0) {
           // Find the managed session for this Claude session
           const managedSession = state.managedSessions.find(
-            s => s.claudeSessionId === event.sessionId
+            (s) => s.claudeSessionId === event.sessionId
           )
           showQuestionModal({
             sessionId: event.sessionId,
@@ -2272,7 +2285,7 @@ function setupPromptForm() {
 
       // If a managed session is selected, use the session API
       if (state.selectedManagedSession && send) {
-        const session = state.managedSessions.find(s => s.id === state.selectedManagedSession)
+        const session = state.managedSessions.find((s) => s.id === state.selectedManagedSession)
         data = await sendPromptToManagedSession(prompt)
         if (data.ok && status) {
           status.textContent = `Sent to ${session?.name || 'session'}!`
@@ -2443,8 +2456,12 @@ function setupSettingsModal(): void {
   const closeBtn = document.getElementById('settings-close')
   const volumeSlider = document.getElementById('settings-volume') as HTMLInputElement | null
   const volumeValue = document.getElementById('settings-volume-value')
-  const spatialCheckbox = document.getElementById('settings-spatial-audio') as HTMLInputElement | null
-  const streamingCheckbox = document.getElementById('settings-streaming-mode') as HTMLInputElement | null
+  const spatialCheckbox = document.getElementById(
+    'settings-spatial-audio'
+  ) as HTMLInputElement | null
+  const streamingCheckbox = document.getElementById(
+    'settings-streaming-mode'
+  ) as HTMLInputElement | null
   const gridSizeSlider = document.getElementById('settings-grid-size') as HTMLInputElement | null
   const gridSizeValue = document.getElementById('settings-grid-size-value')
   const refreshBtn = document.getElementById('settings-refresh-sessions')
@@ -2647,8 +2664,8 @@ function setupAboutModal(): void {
     const versionEl = document.getElementById('about-version')
     if (versionEl) {
       fetch('/health')
-        .then(res => res.json())
-        .then(health => {
+        .then((res) => res.json())
+        .then((health) => {
           versionEl.textContent = `v${health.version || 'unknown'}`
         })
         .catch(() => {
@@ -2848,7 +2865,7 @@ function init() {
       return new THREE.Vector3(zone.position.x, zone.elevation || 0, zone.position.z)
     },
     getProjectName: (sessionId: string) => {
-      const managed = state.managedSessions.find(m => m.claudeSessionId === sessionId)
+      const managed = state.managedSessions.find((m) => m.claudeSessionId === sessionId)
       return managed?.projectName
     },
   })
@@ -2884,7 +2901,7 @@ function init() {
         console.log('Connection timeout - showing overlay')
         showNotConnectedOverlay()
       }
-    }, 3000)  // 3 seconds to connect before showing overlay
+    }, 3000) // 3 seconds to connect before showing overlay
   }
 
   state.client.onEvent(handleEvent)
@@ -2921,12 +2938,14 @@ function init() {
     // Update managed session tokens if sessionId is provided
     // Uses targeted DOM update instead of full re-render for performance
     if (data.sessionId) {
-      const session = state.managedSessions.find(s => s.id === data.sessionId)
+      const session = state.managedSessions.find((s) => s.id === data.sessionId)
       if (session) {
         session.tokens = { current: data.current, cumulative: data.cumulative }
 
         // Targeted DOM update: only update the token element for this session
-        const sessionEl = document.querySelector(`.session-item[data-session-id="${data.sessionId}"]`) as HTMLElement | null
+        const sessionEl = document.querySelector(
+          `.session-item[data-session-id="${data.sessionId}"]`
+        ) as HTMLElement | null
         if (sessionEl) {
           let tokensEl = sessionEl.querySelector('.session-tokens')
           if (!tokensEl) {
@@ -2975,7 +2994,10 @@ function init() {
           if (session.zonePosition) {
             const cartesian = state.scene.hexGrid.axialToCartesian(session.zonePosition)
             hintPosition = { x: cartesian.x, z: cartesian.z }
-            console.log(`Restoring zone for "${session.name}" at saved position`, session.zonePosition)
+            console.log(
+              `Restoring zone for "${session.name}" at saved position`,
+              session.zonePosition
+            )
           } else {
             console.log(`Creating zone for session "${session.name}" (no recent events in history)`)
           }
@@ -2996,7 +3018,7 @@ function init() {
             claude.mesh.position.copy(centerStation.position)
           }
 
-          const subagents = new SubagentManager(state.scene)
+          const subagents = new SubagentManager(state.scene, zone.stations)
 
           const sessionState: SessionState = {
             claude,
@@ -3022,10 +3044,14 @@ function init() {
         // Update zone floor status based on session status
         if (state.scene) {
           // Map managed session status to zone status
-          const zoneStatus = session.status === 'working' ? 'working'
-            : session.status === 'waiting' ? 'waiting'
-            : session.status === 'offline' ? 'offline'
-            : 'idle'
+          const zoneStatus =
+            session.status === 'working'
+              ? 'working'
+              : session.status === 'waiting'
+                ? 'waiting'
+                : session.status === 'offline'
+                  ? 'offline'
+                  : 'idle'
           state.scene.setZoneStatus(session.claudeSessionId, zoneStatus)
         }
       }
@@ -3033,9 +3059,7 @@ function init() {
 
     // Clean up orphaned zones (zones not linked to any managed session)
     if (state.scene) {
-      const activeClaudeIds = new Set(
-        sessions.map(s => s.claudeSessionId).filter(Boolean)
-      )
+      const activeClaudeIds = new Set(sessions.map((s) => s.claudeSessionId).filter(Boolean))
       const zonesToDelete: string[] = []
       for (const [zoneId] of state.scene.zones) {
         if (!activeClaudeIds.has(zoneId)) {
@@ -3067,7 +3091,7 @@ function init() {
 
       // Auto-focus first newly idle session if user hasn't overridden camera
       if (newlyIdle.length > 0 && !state.userChangedCamera) {
-        const workingSessions = sessions.filter(s => s.status === 'working')
+        const workingSessions = sessions.filter((s) => s.status === 'working')
         if (workingSessions.length === 0) {
           const session = newlyIdle[0]
           if (session.claudeSessionId && state.scene) {
@@ -3097,7 +3121,7 @@ function init() {
     if (!state.selectedManagedSession && sessions.length > 0) {
       // Try to restore from localStorage
       const savedSessionId = localStorage.getItem('vibecraft-selected-session')
-      const savedSession = savedSessionId ? sessions.find(s => s.id === savedSessionId) : null
+      const savedSession = savedSessionId ? sessions.find((s) => s.id === savedSessionId) : null
 
       if (savedSession) {
         selectManagedSession(savedSession.id)
@@ -3108,7 +3132,12 @@ function init() {
     }
 
     // Auto-overview once when first reaching 2+ sessions (but respect user's manual changes)
-    if (sessions.length >= 2 && state.scene && !state.hasAutoOverviewed && !state.userChangedCamera) {
+    if (
+      sessions.length >= 2 &&
+      state.scene &&
+      !state.hasAutoOverviewed &&
+      !state.userChangedCamera
+    ) {
       state.hasAutoOverviewed = true
       state.scene.setOverviewMode()
     }
@@ -3156,20 +3185,23 @@ function init() {
     getFocusedSessionId: () => state.focusedSessionId,
     getSelectedManagedSession: () =>
       state.selectedManagedSession
-        ? state.managedSessions.find(s => s.id === state.selectedManagedSession) ?? null
+        ? (state.managedSessions.find((s) => s.id === state.selectedManagedSession) ?? null)
         : null,
     onSelectManagedSession: selectManagedSession,
     onFocusSession: focusSession,
     onGoToNextAttention: goToNextAttention,
     onUpdateAttentionBadge: updateAttentionBadge,
-    onSetUserChangedCamera: (value) => { state.userChangedCamera = value },
+    onSetUserChangedCamera: (value) => {
+      state.userChangedCamera = value
+    },
     onInterruptSession: interruptSession,
   })
 
   // Shift+R to toggle replay mode
   document.addEventListener('keydown', async (e) => {
     if (e.shiftKey && (e.key === 'r' || e.key === 'R')) {
-      const inInput = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement
+      const inInput =
+        e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement
       if (inInput) return
 
       e.preventDefault()
