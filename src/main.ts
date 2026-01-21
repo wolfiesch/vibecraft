@@ -159,6 +159,16 @@ const state: AppState = {
 // Expose for console testing (can remove in production)
 ;(window as any).state = state
 
+// Expose for visual testing (deterministic screenshots)
+// Note: scene and client are initialized in init(), so use getters
+;(window as unknown as { __vibecraft: {
+  scene: typeof state.scene
+  client: typeof state.client
+} }).__vibecraft = {
+  get scene() { return state.scene },
+  get client() { return state.client },
+}
+
 // Track pending zone hints for direction-aware placement
 // Maps managed session name → click position (used when zone is created)
 const pendingZoneHints = new Map<string, { x: number; z: number }>()

@@ -196,6 +196,9 @@ export class WorkshopScene {
   // Time accumulator for animations
   private time = 0
 
+  // Animation pause flag (for deterministic screenshots in visual tests)
+  private animationPaused = false
+
   // World hex grid overlay
   private worldHexGrid: THREE.Group | THREE.LineSegments | null = null
 
@@ -2396,8 +2399,11 @@ export class WorkshopScene {
       // Update controls
       this.controls.update()
 
-      // Update time accumulator
-      this.time += delta
+      // Skip time-based animations when paused (for deterministic screenshots)
+      if (!this.animationPaused) {
+        // Update time accumulator
+        this.time += delta
+      }
 
       // Call render callbacks
       for (const callback of this.onRenderCallbacks) {
@@ -3362,6 +3368,52 @@ export class WorkshopScene {
 
     // Create new grid with updated range
     this.createWorldHexGrid()
+  }
+
+  // ========================================
+  // Visual Testing Support
+  // ========================================
+
+  /**
+   * Pause all animations for deterministic screenshots
+   * Call before taking visual regression screenshots
+   */
+  pauseForScreenshot(): void {
+    this.animationPaused = true
+    this.cameraAnimating = false
+  }
+
+  /**
+   * Resume animations after screenshot
+   */
+  resumeAnimation(): void {
+    this.animationPaused = false
+  }
+
+  /**
+   * Check if animations are paused
+   */
+  isAnimationPaused(): boolean {
+    return this.animationPaused
+  }
+
+  /**
+   * Set camera position directly (for deterministic test screenshots)
+   */
+  setCameraPosition(
+    x: number,
+    y: number,
+    z: number,
+    lookAt?: { x: number; y: number; z: number }
+  ): void {
+    this.camera.position.set(x, y, z)
+    const target = lookAt
+      ? new THREE.Vector3(lookAt.x, lookAt.y, lookAt.z)
+      : new THREE.Vector3(0, 0, 0)
+    this.camera.lookAt(target)
+    this.controls.target.copy(target)
+    this.cameraAnimating = false
+    this.controls.update()
   }
 
   dispose(): void {
