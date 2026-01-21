@@ -12,7 +12,15 @@
 import { createServer, IncomingMessage, ServerResponse } from 'http'
 import { WebSocketServer, WebSocket, RawData } from 'ws'
 import { watch } from 'chokidar'
-import { readFileSync, writeFileSync, existsSync, appendFileSync, mkdirSync, unlinkSync, statSync } from 'fs'
+import {
+  readFileSync,
+  writeFileSync,
+  existsSync,
+  appendFileSync,
+  mkdirSync,
+  unlinkSync,
+  statSync,
+} from 'fs'
 import { exec, execFile } from 'child_process'
 import { dirname, resolve, join, extname } from 'path'
 import { hostname } from 'os'
@@ -34,9 +42,12 @@ import type {
   TextTile,
   CreateTextTileRequest,
   UpdateTextTileRequest,
+  BashOutputMessage,
+  BashCompleteMessage,
 } from '../shared/types.js'
 import { DEFAULTS } from '../shared/defaults.js'
 import { GitStatusManager } from './GitStatusManager.js'
+import { logger } from './logger.js'
 import { ProjectsManager } from './ProjectsManager.js'
 import { detectProjectName } from './projectDetector.js'
 import { fileURLToPath } from 'url'
@@ -52,8 +63,8 @@ function getPackageVersion(): string {
   try {
     // Try multiple locations (dev vs compiled)
     const locations = [
-      resolve(__dirname, '../package.json'),      // dev: server/ -> package.json
-      resolve(__dirname, '../../package.json'),   // compiled: dist/server/ -> package.json
+      resolve(__dirname, '../package.json'), // dev: server/ -> package.json
+      resolve(__dirname, '../../package.json'), // compiled: dist/server/ -> package.json
     ]
     for (const loc of locations) {
       if (existsSync(loc)) {
@@ -83,12 +94,18 @@ function expandHome(path: string): string {
 
 const PORT = parseInt(process.env.VIBECRAFT_PORT ?? String(DEFAULTS.SERVER_PORT), 10)
 const EVENTS_FILE = resolve(expandHome(process.env.VIBECRAFT_EVENTS_FILE ?? DEFAULTS.EVENTS_FILE))
-const PENDING_PROMPT_FILE = resolve(expandHome(process.env.VIBECRAFT_PROMPT_FILE ?? '~/.vibecraft/data/pending-prompt.txt'))
+const PENDING_PROMPT_FILE = resolve(
+  expandHome(process.env.VIBECRAFT_PROMPT_FILE ?? '~/.vibecraft/data/pending-prompt.txt')
+)
 const MAX_EVENTS = parseInt(process.env.VIBECRAFT_MAX_EVENTS ?? String(DEFAULTS.MAX_EVENTS), 10)
 const DEBUG = process.env.VIBECRAFT_DEBUG === 'true'
 const TMUX_SESSION = process.env.VIBECRAFT_TMUX_SESSION ?? DEFAULTS.TMUX_SESSION
-const SESSIONS_FILE = resolve(expandHome(process.env.VIBECRAFT_SESSIONS_FILE ?? DEFAULTS.SESSIONS_FILE))
-const TILES_FILE = resolve(expandHome(process.env.VIBECRAFT_TILES_FILE ?? '~/.vibecraft/data/tiles.json'))
+const SESSIONS_FILE = resolve(
+  expandHome(process.env.VIBECRAFT_SESSIONS_FILE ?? DEFAULTS.SESSIONS_FILE)
+)
+const TILES_FILE = resolve(
+  expandHome(process.env.VIBECRAFT_TILES_FILE ?? '~/.vibecraft/data/tiles.json')
+)
 
 /** Time before a "working" session auto-transitions to idle (failsafe for missed events) */
 const WORKING_TIMEOUT_MS = 120_000 // 2 minutes
@@ -99,12 +116,18 @@ const MAX_BODY_SIZE = 1024 * 1024
 /** How often to check for stale "working" sessions */
 const WORKING_CHECK_INTERVAL_MS = 10_000 // 10 seconds
 
+/** How often to cleanup orphaned Map entries (60 seconds) */
+const CLEANUP_INTERVAL_MS = 60_000
+
+/** Max age for orphaned entries before cleanup (5 minutes) */
+const ORPHAN_MAX_AGE_MS = 5 * 60_000
+
 /** Extended PATH for exec() - includes Homebrew and user paths for macOS/Linux */
 const HOME = process.env.HOME || ''
 const EXEC_PATH = [
-  `${HOME}/.local/bin`,     // User local bin (Claude CLI default location)
-  '/opt/homebrew/bin',      // macOS Apple Silicon Homebrew
-  '/usr/local/bin',         // macOS Intel Homebrew / Linux local
+  `${HOME}/.local/bin`, // User local bin (Claude CLI default location)
+  '/opt/homebrew/bin', // macOS Apple Silicon Homebrew
+  '/usr/local/bin', // macOS Intel Homebrew / Linux local
   process.env.PATH || '',
 ].join(':')
 
@@ -165,7 +188,8 @@ function validateDirectoryPath(inputPath: string): string {
 
   // Reject paths with shell metacharacters that could enable injection
   // Even with execFile, tmux passes commands to a shell
-  const dangerousChars = /[;&|`$(){}[\]<>\\'"!#*?]/
+  // Note: ' and " are valid filesystem chars on macOS/Linux and safe with execFile
+  const dangerousChars = /[;&|`$(){}[\]<>\\!#*?]/
   if (dangerousChars.test(resolved)) {
     throw new Error(`Directory path contains invalid characters: ${inputPath}`)
   }
@@ -212,7 +236,10 @@ function execFileAsync(cmd: string, args: string[]): Promise<void> {
  * Safely collect request body with size limit to prevent DoS.
  * Returns a promise that resolves with the body string or rejects on error/oversized.
  */
-function collectRequestBody(req: IncomingMessage, maxSize: number = MAX_BODY_SIZE): Promise<string> {
+function collectRequestBody(
+  req: IncomingMessage,
+  maxSize: number = MAX_BODY_SIZE
+): Promise<string> {
   return new Promise((resolve, reject) => {
     let body = ''
     let size = 0
@@ -250,7 +277,7 @@ async function sendToTmuxSafe(tmuxSession: string, text: string): Promise<void> 
     // Paste buffer into session
     await execFileAsync('tmux', ['paste-buffer', '-t', tmuxSession])
     // Send Enter to submit
-    await new Promise(r => setTimeout(r, 100)) // Small delay like original
+    await new Promise((r) => setTimeout(r, 100)) // Small delay like original
     await execFileAsync('tmux', ['send-keys', '-t', tmuxSession, 'Enter'])
   } finally {
     // Clean up temp file
@@ -283,9 +310,9 @@ let lastFileSize = 0
 
 /** Token tracking per session */
 interface SessionTokens {
-  lastSeen: number  // Last token count seen in output
-  cumulative: number  // Running total (estimated)
-  lastUpdate: number  // Timestamp
+  lastSeen: number // Last token count seen in output
+  cumulative: number // Running total (estimated)
+  lastUpdate: number // Timestamp
 }
 const sessionTokens = new Map<string, SessionTokens>()
 
@@ -294,20 +321,46 @@ let lastTmuxHash = ''
 
 /** Track pending permission prompts per session */
 interface PermissionOption {
-  number: string     // "1", "2", "3"
-  label: string      // "Yes", "Yes, and always allow...", "No"
+  number: string // "1", "2", "3"
+  label: string // "Yes", "Yes, and always allow...", "No"
 }
 
 interface PermissionPrompt {
   tool: string
-  context: string       // The full prompt text
-  options: PermissionOption[]  // Available choices
+  context: string // The full prompt text
+  options: PermissionOption[] // Available choices
   detectedAt: number
 }
 const pendingPermissions = new Map<string, PermissionPrompt>()
 
 /** Track sessions that have had the bypass permissions warning handled */
 const bypassWarningHandled = new Set<string>()
+
+// ============================================================================
+// Session Continuity (Context Clear Handling)
+// ============================================================================
+
+/**
+ * Track sessions expecting continuation after context clear.
+ * When a session ends with reason='clear', the next session_start with
+ * source='clear' should inherit the same zone instead of creating a new one.
+ */
+interface PendingContinuation {
+  /** The managed session/zone to continue */
+  managedSessionId: string
+  /** The old Claude session ID that ended */
+  oldClaudeSessionId: string
+  /** Working directory (for matching) */
+  cwd: string
+  /** Timestamp when the clear happened */
+  timestamp: number
+}
+
+/** Map: cwd -> PendingContinuation (cwd is the primary matching key) */
+const pendingContinuations = new Map<string, PendingContinuation>()
+
+/** Maximum time to wait for continuation after context clear (10 seconds) */
+const CONTINUATION_TIMEOUT_MS = 10_000
 
 /** Managed sessions registry */
 const managedSessions = new Map<string, ManagedSession>()
@@ -323,6 +376,166 @@ const projectsManager = new ProjectsManager()
 
 /** Active voice transcription sessions (WebSocket client → Deepgram connection) */
 const voiceSessions = new Map<WebSocket, LiveClient>()
+
+// ============================================================================
+// Bash Output Streaming (Phase 2)
+// ============================================================================
+
+/** Active bash tool tracking for real-time output streaming */
+interface ActiveBashTool {
+  /** Tool use ID */
+  toolUseId: string
+  /** Claude session ID */
+  sessionId: string
+  /** Managed session ID (for tmux lookup) */
+  managedSessionId: string
+  /** tmux session name */
+  tmuxSession: string
+  /** Start time */
+  startTime: number
+  /** Last captured line count (to detect new lines) */
+  lastLineCount: number
+  /** Accumulated output lines */
+  capturedLines: string[]
+  /** Polling interval handle */
+  pollInterval: ReturnType<typeof setInterval> | null
+}
+
+/** Map: toolUseId -> ActiveBashTool */
+const activeBashTools = new Map<string, ActiveBashTool>()
+
+/** Polling interval for bash output (ms) */
+const BASH_POLL_INTERVAL_MS = 500
+
+/**
+ * Start tracking a bash command for real-time output
+ */
+function startBashTracking(toolUseId: string, sessionId: string): void {
+  // Find the managed session for tmux access
+  const managedSession = findManagedSession(sessionId)
+  if (!managedSession) {
+    debug(`Cannot track bash output: no managed session for ${sessionId}`)
+    return
+  }
+
+  // Skip implicit sessions (no tmux control)
+  if (isImplicitSession(managedSession)) {
+    debug(`Cannot track bash output: implicit session ${managedSession.id}`)
+    return
+  }
+
+  const tool: ActiveBashTool = {
+    toolUseId,
+    sessionId,
+    managedSessionId: managedSession.id,
+    tmuxSession: managedSession.tmuxSession,
+    startTime: Date.now(),
+    lastLineCount: 0,
+    capturedLines: [],
+    pollInterval: null,
+  }
+
+  // Start polling
+  tool.pollInterval = setInterval(() => {
+    pollBashOutput(tool)
+  }, BASH_POLL_INTERVAL_MS)
+
+  activeBashTools.set(toolUseId, tool)
+  debug(`Started bash tracking for ${toolUseId} in session ${managedSession.name}`)
+}
+
+/**
+ * Stop tracking a bash command and send final output
+ */
+function stopBashTracking(
+  toolUseId: string,
+  stdout: string,
+  stderr: string,
+  success: boolean
+): void {
+  const tool = activeBashTools.get(toolUseId)
+  if (!tool) {
+    return // Wasn't being tracked (e.g., implicit session)
+  }
+
+  // Stop polling
+  if (tool.pollInterval) {
+    clearInterval(tool.pollInterval)
+  }
+
+  // Broadcast completion message
+  const completeMsg: BashCompleteMessage = {
+    type: 'bash_complete',
+    toolUseId,
+    sessionId: tool.sessionId,
+    stdout,
+    stderr,
+    success,
+  }
+
+  broadcast({
+    type: 'bash_complete',
+    payload: completeMsg,
+  } as ServerMessage)
+
+  activeBashTools.delete(toolUseId)
+  debug(`Stopped bash tracking for ${toolUseId}`)
+}
+
+/**
+ * Poll tmux for bash command output
+ */
+function pollBashOutput(tool: ActiveBashTool): void {
+  try {
+    validateTmuxSession(tool.tmuxSession)
+  } catch {
+    return
+  }
+
+  // Capture the last 200 lines from tmux
+  execFile(
+    'tmux',
+    ['capture-pane', '-t', tool.tmuxSession, '-p', '-S', '-200'],
+    { ...EXEC_OPTIONS, maxBuffer: 1024 * 1024 },
+    (error, stdout) => {
+      if (error) {
+        return
+      }
+
+      const lines = stdout.split('\n')
+      const newLineCount = lines.length
+
+      // Only process if we have new lines
+      if (newLineCount > tool.lastLineCount) {
+        const newLines = lines.slice(tool.lastLineCount)
+        tool.capturedLines.push(...newLines)
+        tool.lastLineCount = newLineCount
+
+        // Filter out empty lines and tmux UI artifacts for the broadcast
+        // Support multiple bullet variants: ● (bullet), ◐ (half-circle), • (bullet), ○ (hollow circle)
+        const filteredNewLines = newLines.filter(
+          (line) => line.trim() && !/^[●◐•○]/.test(line.trim()) && !line.startsWith('Running')
+        )
+
+        if (filteredNewLines.length > 0) {
+          const outputMsg: BashOutputMessage = {
+            type: 'bash_output',
+            toolUseId: tool.toolUseId,
+            sessionId: tool.sessionId,
+            lines: filteredNewLines,
+            totalLines: tool.capturedLines.length,
+            timestamp: Date.now(),
+          }
+
+          broadcast({
+            type: 'bash_output',
+            payload: outputMsg,
+          } as ServerMessage)
+        }
+      }
+    }
+  )
+}
 
 /** Deepgram API key (loaded on startup) */
 let deepgramApiKey: string | null = null
@@ -376,8 +589,8 @@ function debug(...args: unknown[]) {
 function parseTokensFromOutput(output: string): number | null {
   // Match patterns like: ↓ 879 tokens, ↓ 1,234 tokens, ↓ 12.5k tokens
   const patterns = [
-    /↓\s*([0-9,]+)\s*tokens?/gi,           // ↓ 879 tokens, ↓ 1,234 tokens
-    /↓\s*([0-9.]+)k\s*tokens?/gi,          // ↓ 12.5k tokens, ↓ 12k tokens
+    /↓\s*([0-9,]+)\s*tokens?/gi, // ↓ 879 tokens, ↓ 1,234 tokens
+    /↓\s*([0-9.]+)k\s*tokens?/gi, // ↓ 12.5k tokens, ↓ 12k tokens
   ]
 
   let maxTokens = 0
@@ -410,56 +623,61 @@ function pollTokens(tmuxSession: string): void {
     return
   }
 
-  execFile('tmux', ['capture-pane', '-t', tmuxSession, '-p', '-S', '-50'], { ...EXEC_OPTIONS, maxBuffer: 1024 * 1024 }, (error, stdout) => {
-    if (error) {
-      debug(`Token poll failed: ${error.message}`)
-      return
+  execFile(
+    'tmux',
+    ['capture-pane', '-t', tmuxSession, '-p', '-S', '-50'],
+    { ...EXEC_OPTIONS, maxBuffer: 1024 * 1024 },
+    (error, stdout) => {
+      if (error) {
+        debug(`Token poll failed: ${error.message}`)
+        return
+      }
+
+      // Simple hash to detect changes
+      const hash = stdout.slice(-500)
+      if (hash === lastTmuxHash) return
+      lastTmuxHash = hash
+
+      const tokens = parseTokensFromOutput(stdout)
+      if (tokens === null) return
+
+      // Update session tokens (use TMUX_SESSION as session ID for now)
+      let session = sessionTokens.get(tmuxSession)
+      if (!session) {
+        session = { lastSeen: 0, cumulative: 0, lastUpdate: Date.now() }
+        sessionTokens.set(tmuxSession, session)
+      }
+
+      // If we see a higher token count, update cumulative
+      if (tokens > session.lastSeen) {
+        const delta = tokens - session.lastSeen
+        session.cumulative += delta
+        session.lastSeen = tokens
+        session.lastUpdate = Date.now()
+
+        debug(`Tokens updated: ${tokens} (cumulative: ${session.cumulative})`)
+
+        // Find managed session ID for this tmux session (O(1) lookup via reverse map)
+        const managedSessionId = tmuxToManagedMap.get(tmuxSession)
+
+        // Broadcast token update
+        broadcast({
+          type: 'tokens',
+          payload: {
+            session: tmuxSession,
+            sessionId: managedSessionId,
+            current: tokens,
+            cumulative: session.cumulative,
+          },
+        } as ServerMessage)
+      } else if (tokens < session.lastSeen && tokens > 0) {
+        // Token count dropped - likely new conversation, reset tracking
+        session.lastSeen = tokens
+        session.lastUpdate = Date.now()
+        debug(`Token count reset detected: ${tokens}`)
+      }
     }
-
-    // Simple hash to detect changes
-    const hash = stdout.slice(-500)
-    if (hash === lastTmuxHash) return
-    lastTmuxHash = hash
-
-    const tokens = parseTokensFromOutput(stdout)
-    if (tokens === null) return
-
-    // Update session tokens (use TMUX_SESSION as session ID for now)
-    let session = sessionTokens.get(tmuxSession)
-    if (!session) {
-      session = { lastSeen: 0, cumulative: 0, lastUpdate: Date.now() }
-      sessionTokens.set(tmuxSession, session)
-    }
-
-    // If we see a higher token count, update cumulative
-    if (tokens > session.lastSeen) {
-      const delta = tokens - session.lastSeen
-      session.cumulative += delta
-      session.lastSeen = tokens
-      session.lastUpdate = Date.now()
-
-      debug(`Tokens updated: ${tokens} (cumulative: ${session.cumulative})`)
-
-      // Find managed session ID for this tmux session (O(1) lookup via reverse map)
-      const managedSessionId = tmuxToManagedMap.get(tmuxSession)
-
-      // Broadcast token update
-      broadcast({
-        type: 'tokens',
-        payload: {
-          session: tmuxSession,
-          sessionId: managedSessionId,
-          current: tokens,
-          cumulative: session.cumulative,
-        },
-      } as ServerMessage)
-    } else if (tokens < session.lastSeen && tokens > 0) {
-      // Token count dropped - likely new conversation, reset tracking
-      session.lastSeen = tokens
-      session.lastUpdate = Date.now()
-      debug(`Token count reset detected: ${tokens}`)
-    }
-  })
+  )
 }
 
 /**
@@ -515,7 +733,9 @@ function startTokenPolling(): void {
  *
  *   ctrl-g to edit in Vim · ~/.claude/plans/...
  */
-function detectPermissionPrompt(output: string): { tool: string; context: string; options: PermissionOption[] } | null {
+function detectPermissionPrompt(
+  output: string
+): { tool: string; context: string; options: PermissionOption[] } | null {
   const lines = output.split('\n')
 
   // Look for "Do you want to proceed?" OR "Would you like to proceed?" in recent output
@@ -539,14 +759,15 @@ function detectPermissionPrompt(output: string): { tool: string; context: string
       break
     }
     // Also check for the ❯ selector arrow which indicates the interactive menu
-    if (/^\s*❯/.test(lines[i])) {
+    // Support multiple variants: ❯ (heavy right-pointing angle bracket), > (greater than), › (single right angle quote)
+    if (/^\s*[❯>›]/.test(lines[i])) {
       hasSelector = true
     }
   }
 
   // Must have either the footer or the selector arrow to be a real prompt
   if (!hasFooter && !hasSelector) {
-    debug('Skipping false positive: no "Esc to cancel"/"ctrl-g" footer or ❯ selector found')
+    debug('Skipping false positive: no "Esc to cancel"/"ctrl-g" footer or selector arrow found')
     return null
   }
 
@@ -559,12 +780,12 @@ function detectPermissionPrompt(output: string): { tool: string; context: string
     if (/Esc to cancel/i.test(line)) break
 
     // Match options like "❯ 1. Yes" or "  2. Yes, and always..."
-    // The arrow (❯) indicates current selection, but we want all options
-    const optionMatch = line.match(/^\s*[❯>]?\s*(\d+)\.\s+(.+)$/)
+    // The arrow (❯ > ›) indicates current selection, but we want all options
+    const optionMatch = line.match(/^\s*[❯>›]?\s*(\d+)\.\s+(.+)$/)
     if (optionMatch) {
       options.push({
         number: optionMatch[1],
-        label: optionMatch[2].trim()
+        label: optionMatch[2].trim(),
       })
     }
   }
@@ -576,14 +797,16 @@ function detectPermissionPrompt(output: string): { tool: string; context: string
   let tool = 'Unknown'
   for (let i = proceedLineIdx; i >= Math.max(0, proceedLineIdx - 20); i--) {
     // Match tool header like "● Bash(rm /tmp/test.txt)" or "· Bash(prompt: ...)"
-    // ● = bullet, ◐ = half-filled circle, · = middle dot (plan mode)
-    const toolMatch = lines[i].match(/[●◐·]\s*(\w+)\s*\(/)
+    // Support multiple bullet variants: ● (bullet), ◐ (half-circle), · (middle dot), • (bullet), ○ (hollow circle)
+    const toolMatch = lines[i].match(/[●◐·•○]\s*(\w+)\s*\(/)
     if (toolMatch) {
       tool = toolMatch[1]
       break
     }
     // Also match standalone tool type like "Bash command" or "Read file"
-    const cmdMatch = lines[i].match(/^\s*(Bash|Read|Write|Edit|Grep|Glob|Task|WebFetch|WebSearch)\s+\w+/i)
+    const cmdMatch = lines[i].match(
+      /^\s*(Bash|Read|Write|Edit|Grep|Glob|Task|WebFetch|WebSearch)\s+\w+/i
+    )
     if (cmdMatch) {
       tool = cmdMatch[1]
       break
@@ -595,7 +818,9 @@ function detectPermissionPrompt(output: string): { tool: string; context: string
   const contextEnd = proceedLineIdx + 1 + options.length
   const context = lines.slice(contextStart, contextEnd).join('\n').trim()
 
-  debug(`Detected permission prompt: tool=${tool}, options=${options.map(o => o.number + ':' + o.label).join(', ')}`)
+  debug(
+    `Detected permission prompt: tool=${tool}, options=${options.map((o) => o.number + ':' + o.label).join(', ')}`
+  )
 
   return { tool, context, options }
 }
@@ -634,79 +859,86 @@ function pollPermissions(sessionId: string, tmuxSession: string): void {
     return
   }
 
-  execFile('tmux', ['capture-pane', '-t', tmuxSession, '-p', '-S', '-50'], { ...EXEC_OPTIONS, maxBuffer: 1024 * 1024 }, (error, stdout) => {
-    if (error) {
-      debug(`Permission poll failed for ${tmuxSession}: ${error.message}`)
-      return
-    }
+  execFile(
+    'tmux',
+    ['capture-pane', '-t', tmuxSession, '-p', '-S', '-50'],
+    { ...EXEC_OPTIONS, maxBuffer: 1024 * 1024 },
+    (error, stdout) => {
+      if (error) {
+        debug(`Permission poll failed for ${tmuxSession}: ${error.message}`)
+        return
+      }
 
-    // Check for bypass permissions warning (first-time use of --dangerously-skip-permissions)
-    if (detectBypassWarning(stdout) && !bypassWarningHandled.has(sessionId)) {
-      log(`Bypass permissions warning detected for session ${sessionId}, auto-accepting...`)
-      bypassWarningHandled.add(sessionId)
-      // Send "2" to accept the warning
-      execFile('tmux', ['send-keys', '-t', tmuxSession, '2'], EXEC_OPTIONS, (err) => {
-        if (err) {
-          log(`Failed to auto-accept bypass warning: ${err.message}`)
-        } else {
-          log(`Bypass permissions warning accepted for session ${sessionId}`)
-        }
-      })
-      return // Don't process further this poll cycle
-    }
+      // Check for bypass permissions warning (first-time use of --dangerously-skip-permissions)
+      if (detectBypassWarning(stdout) && !bypassWarningHandled.has(sessionId)) {
+        log(`Bypass permissions warning detected for session ${sessionId}, auto-accepting...`)
+        bypassWarningHandled.add(sessionId)
+        // Send "2" to accept the warning
+        execFile('tmux', ['send-keys', '-t', tmuxSession, '2'], EXEC_OPTIONS, (err) => {
+          if (err) {
+            log(`Failed to auto-accept bypass warning: ${err.message}`)
+          } else {
+            log(`Bypass permissions warning accepted for session ${sessionId}`)
+          }
+        })
+        return // Don't process further this poll cycle
+      }
 
-    const prompt = detectPermissionPrompt(stdout)
-    const existing = pendingPermissions.get(sessionId)
+      const prompt = detectPermissionPrompt(stdout)
+      const existing = pendingPermissions.get(sessionId)
 
-    if (prompt && !existing) {
-      // New permission prompt detected
-      pendingPermissions.set(sessionId, {
-        tool: prompt.tool,
-        context: prompt.context,
-        options: prompt.options,
-        detectedAt: Date.now(),
-      })
-
-      log(`Permission prompt detected for session ${sessionId}: ${prompt.tool} (${prompt.options.length} options)`)
-
-      // Broadcast to clients with options
-      broadcast({
-        type: 'permission_prompt',
-        payload: {
-          sessionId,
+      if (prompt && !existing) {
+        // New permission prompt detected
+        pendingPermissions.set(sessionId, {
           tool: prompt.tool,
           context: prompt.context,
           options: prompt.options,
-        },
-      } as ServerMessage)
+          detectedAt: Date.now(),
+        })
 
-      // Update session status
-      const session = managedSessions.get(sessionId)
-      if (session) {
-        session.status = 'waiting'
-        session.currentTool = prompt.tool
-        broadcastSessions()
-      }
-    } else if (!prompt && existing) {
-      // Permission prompt was resolved (user responded in terminal or elsewhere)
-      pendingPermissions.delete(sessionId)
-      log(`Permission prompt resolved for session ${sessionId}`)
+        log(
+          `Permission prompt detected for session ${sessionId}: ${prompt.tool} (${prompt.options.length} options)`
+        )
 
-      // Broadcast resolution
-      broadcast({
-        type: 'permission_resolved',
-        payload: { sessionId },
-      } as ServerMessage)
+        // Broadcast to clients with options
+        broadcast({
+          type: 'permission_prompt',
+          payload: {
+            sessionId,
+            tool: prompt.tool,
+            context: prompt.context,
+            options: prompt.options,
+          },
+        } as ServerMessage)
 
-      // Reset session status
-      const session = managedSessions.get(sessionId)
-      if (session && session.status === 'waiting') {
-        session.status = 'working'
-        session.currentTool = undefined
-        broadcastSessions()
+        // Update session status
+        const session = managedSessions.get(sessionId)
+        if (session) {
+          session.status = 'waiting'
+          session.currentTool = prompt.tool
+          broadcastSessions()
+        }
+      } else if (!prompt && existing) {
+        // Permission prompt was resolved (user responded in terminal or elsewhere)
+        pendingPermissions.delete(sessionId)
+        log(`Permission prompt resolved for session ${sessionId}`)
+
+        // Broadcast resolution
+        broadcast({
+          type: 'permission_resolved',
+          payload: { sessionId },
+        } as ServerMessage)
+
+        // Reset session status
+        const session = managedSessions.get(sessionId)
+        if (session && session.status === 'waiting') {
+          session.status = 'working'
+          session.currentTool = undefined
+          broadcastSessions()
+        }
       }
     }
-  })
+  )
 }
 
 /**
@@ -752,22 +984,27 @@ function sendPermissionResponse(sessionId: string, optionNumber: string): boolea
   }
 
   // Send the option number to tmux - Claude Code expects just the number
-  execFile('tmux', ['send-keys', '-t', session.tmuxSession, optionNumber], EXEC_OPTIONS, (error) => {
-    if (error) {
-      log(`Failed to send permission response: ${error.message}`)
-      return
+  execFile(
+    'tmux',
+    ['send-keys', '-t', session.tmuxSession, optionNumber],
+    EXEC_OPTIONS,
+    (error) => {
+      if (error) {
+        log(`Failed to send permission response: ${error.message}`)
+        return
+      }
+
+      log(`Sent permission response to ${session.name}: option ${optionNumber}`)
+
+      // Clear the pending permission
+      pendingPermissions.delete(sessionId)
+
+      // Update session status
+      session.status = 'working'
+      session.currentTool = undefined
+      broadcastSessions()
     }
-
-    log(`Sent permission response to ${session.name}: option ${optionNumber}`)
-
-    // Clear the pending permission
-    pendingPermissions.delete(sessionId)
-
-    // Update session status
-    session.status = 'working'
-    session.currentTool = undefined
-    broadcastSessions()
-  })
+  )
 
   return true
 }
@@ -830,48 +1067,49 @@ async function createSession(options: CreateSessionRequest = {}): Promise<Manage
   return new Promise((resolve, reject) => {
     // Spawn tmux session with claude using execFile to prevent shell injection
     // Arguments are passed as array, not interpolated into a shell string
-    execFile('tmux', [
-      'new-session',
-      '-d',
-      '-s', tmuxSession,
-      '-c', cwd,
-      `PATH=${EXEC_PATH} ${claudeCmd}`
-    ], EXEC_OPTIONS, (error) => {
-      if (error) {
-        log(`Failed to spawn session: ${error.message}`)
-        reject(new Error(`Failed to spawn session: ${error.message}`))
-        return
+    execFile(
+      'tmux',
+      ['new-session', '-d', '-s', tmuxSession, '-c', cwd, `PATH=${EXEC_PATH} ${claudeCmd}`],
+      EXEC_OPTIONS,
+      (error) => {
+        if (error) {
+          log(`Failed to spawn session: ${error.message}`)
+          reject(new Error(`Failed to spawn session: ${error.message}`))
+          return
+        }
+
+        const session: ManagedSession = {
+          id,
+          name,
+          tmuxSession,
+          status: 'idle',
+          createdAt: Date.now(),
+          lastActivity: Date.now(),
+          cwd,
+          projectName: projectInfo?.name,
+          projectSource: projectInfo?.source,
+        }
+
+        managedSessions.set(id, session)
+        tmuxToManagedMap.set(tmuxSession, id)
+        log(
+          `Created session: ${name} (${id.slice(0, 8)}) -> tmux:${tmuxSession} project:${projectInfo?.name ?? 'unknown'} (${projectInfo?.source ?? 'none'})`
+        )
+
+        // Track git status for this session
+        if (cwd) {
+          gitStatusManager.track(id, cwd)
+          // Remember this directory for future autocomplete
+          projectsManager.addProject(cwd, name)
+        }
+
+        // Broadcast and persist
+        broadcastSessions()
+        saveSessions()
+
+        resolve(session)
       }
-
-      const session: ManagedSession = {
-        id,
-        name,
-        tmuxSession,
-        status: 'idle',
-        createdAt: Date.now(),
-        lastActivity: Date.now(),
-        cwd,
-        projectName: projectInfo?.name,
-        projectSource: projectInfo?.source,
-      }
-
-      managedSessions.set(id, session)
-      tmuxToManagedMap.set(tmuxSession, id)
-      log(`Created session: ${name} (${id.slice(0, 8)}) -> tmux:${tmuxSession} project:${projectInfo?.name ?? 'unknown'} (${projectInfo?.source ?? 'none'})`)
-
-      // Track git status for this session
-      if (cwd) {
-        gitStatusManager.track(id, cwd)
-        // Remember this directory for future autocomplete
-        projectsManager.addProject(cwd, name)
-      }
-
-      // Broadcast and persist
-      broadcastSessions()
-      saveSessions()
-
-      resolve(session)
-    })
+    )
   })
 }
 
@@ -914,7 +1152,9 @@ function createImplicitSession(options: CreateImplicitSessionRequest): ManagedSe
   managedSessions.set(id, session)
   claudeToManagedMap.set(claudeSessionId, id)
 
-  log(`Created implicit session: ${name} (${id.slice(0, 8)}) for Claude ${claudeSessionId.slice(0, 8)}`)
+  log(
+    `Created implicit session: ${name} (${id.slice(0, 8)}) for Claude ${claudeSessionId.slice(0, 8)}`
+  )
 
   // Track git status if cwd is provided
   if (cwd) {
@@ -932,7 +1172,7 @@ function createImplicitSession(options: CreateImplicitSessionRequest): ManagedSe
  * Get all managed sessions
  */
 function getSessions(): ManagedSession[] {
-  return Array.from(managedSessions.values()).map(session => ({
+  return Array.from(managedSessions.values()).map((session) => ({
     ...session,
     gitStatus: gitStatusManager.getStatus(session.id) ?? undefined,
   }))
@@ -1021,7 +1261,10 @@ function deleteSession(id: string): Promise<boolean> {
 /**
  * Send a prompt to a specific session
  */
-async function sendPromptToSession(id: string, prompt: string): Promise<{ ok: boolean; error?: string }> {
+async function sendPromptToSession(
+  id: string,
+  prompt: string
+): Promise<{ ok: boolean; error?: string }> {
   const session = managedSessions.get(id)
   if (!session) {
     return { ok: false, error: 'Session not found' }
@@ -1070,7 +1313,11 @@ function checkSessionHealth(): void {
       if (isImplicitSession(session)) continue
 
       const isAlive = activeSessions.has(session.tmuxSession)
-      const newStatus = isAlive ? (session.status === 'offline' ? 'idle' : session.status) : 'offline'
+      const newStatus = isAlive
+        ? session.status === 'offline'
+          ? 'idle'
+          : session.status
+        : 'offline'
 
       if (session.status !== newStatus) {
         session.status = newStatus
@@ -1097,7 +1344,9 @@ function checkWorkingTimeout(): void {
     if (session.status === 'working') {
       const timeSinceActivity = now - session.lastActivity
       if (timeSinceActivity > WORKING_TIMEOUT_MS) {
-        log(`Session "${session.name}" timed out after ${Math.round(timeSinceActivity / 1000)}s of no activity`)
+        log(
+          `Session "${session.name}" timed out after ${Math.round(timeSinceActivity / 1000)}s of no activity`
+        )
         session.status = 'idle'
         session.currentTool = undefined
         changed = true
@@ -1105,9 +1354,54 @@ function checkWorkingTimeout(): void {
     }
   }
 
+  // Clean up expired pending continuations
+  for (const [cwd, pending] of pendingContinuations) {
+    if (now - pending.timestamp > CONTINUATION_TIMEOUT_MS) {
+      pendingContinuations.delete(cwd)
+      log(`[Session] Expired pending continuation for cwd: ${cwd}`)
+    }
+  }
+
   if (changed) {
     broadcastSessions()
     saveSessions()
+  }
+}
+
+/**
+ * Clean up orphaned Map entries to prevent memory leaks.
+ * Removes entries from pendingToolUses and activeBashTools
+ * that are older than ORPHAN_MAX_AGE_MS.
+ */
+function cleanupOrphanedEntries(): void {
+  const now = Date.now()
+  let cleanedPending = 0
+  let cleanedBash = 0
+
+  // Clean up orphaned pendingToolUses (pre_tool_use without matching post)
+  for (const [toolUseId, event] of pendingToolUses) {
+    if (now - event.timestamp > ORPHAN_MAX_AGE_MS) {
+      pendingToolUses.delete(toolUseId)
+      cleanedPending++
+    }
+  }
+
+  // Clean up orphaned activeBashTools (tools that never completed)
+  for (const [toolUseId, tool] of activeBashTools) {
+    if (now - tool.startTime > ORPHAN_MAX_AGE_MS) {
+      // Stop polling before removing
+      if (tool.pollInterval) {
+        clearInterval(tool.pollInterval)
+      }
+      activeBashTools.delete(toolUseId)
+      cleanedBash++
+    }
+  }
+
+  if (cleanedPending > 0 || cleanedBash > 0) {
+    debug(
+      `Cleanup: removed ${cleanedPending} orphaned pendingToolUses, ${cleanedBash} orphaned activeBashTools`
+    )
   }
 }
 
@@ -1173,7 +1467,11 @@ function loadSessions(): void {
 
     log(`Loaded ${managedSessions.size} sessions from ${SESSIONS_FILE}`)
   } catch (e) {
-    console.error('Failed to load sessions:', e)
+    logger.error('file', 'Failed to load sessions file', {
+      path: SESSIONS_FILE,
+      error: String(e),
+    })
+    // Continue with empty sessions rather than crashing
   }
 }
 
@@ -1230,7 +1528,11 @@ function loadTiles(): void {
 
     log(`Loaded ${textTiles.size} tiles from ${TILES_FILE}`)
   } catch (e) {
-    console.error('Failed to load tiles:', e)
+    logger.error('file', 'Failed to load tiles file', {
+      path: TILES_FILE,
+      error: String(e),
+    })
+    // Continue with empty tiles rather than crashing
   }
 }
 
@@ -1253,7 +1555,9 @@ function broadcastTiles(): void {
  */
 function startVoiceSession(ws: WebSocket): boolean {
   if (!deepgramApiKey) {
-    ws.send(JSON.stringify({ type: 'voice_error', payload: { error: 'Voice input not configured' } }))
+    ws.send(
+      JSON.stringify({ type: 'voice_error', payload: { error: 'Voice input not configured' } })
+    )
     return false
   }
 
@@ -1280,10 +1584,12 @@ function startVoiceSession(ws: WebSocket): boolean {
     connection.on(LiveTranscriptionEvents.Transcript, (data) => {
       const transcript = data.channel?.alternatives?.[0]?.transcript
       if (transcript) {
-        ws.send(JSON.stringify({
-          type: 'voice_transcript',
-          payload: { transcript, isFinal: data.is_final }
-        }))
+        ws.send(
+          JSON.stringify({
+            type: 'voice_transcript',
+            payload: { transcript, isFinal: data.is_final },
+          })
+        )
       }
     })
 
@@ -1368,11 +1674,26 @@ function findManagedSession(claudeSessionId: string): ManagedSession | undefined
 // ============================================================================
 
 function processEvent(event: ClaudeEvent): ClaudeEvent {
+  // Handle empty/missing toolUseId to prevent Map collisions
+  if (
+    (event.type === 'pre_tool_use' || event.type === 'post_tool_use') &&
+    !(event as PreToolUseEvent | PostToolUseEvent).toolUseId
+  ) {
+    const toolEvent = event as PreToolUseEvent | PostToolUseEvent
+    toolEvent.toolUseId = `generated-${Date.now()}-${randomUUID().slice(0, 8)}`
+    debug(`Generated toolUseId for ${event.type}: ${toolEvent.toolUseId}`)
+  }
+
   // Track pre_tool_use for duration calculation
   if (event.type === 'pre_tool_use') {
     const preEvent = event as PreToolUseEvent
     pendingToolUses.set(preEvent.toolUseId, preEvent)
     debug(`Tracking tool use: ${preEvent.tool} (${preEvent.toolUseId})`)
+
+    // Start bash output streaming for Bash tools
+    if (preEvent.tool === 'Bash') {
+      startBashTracking(preEvent.toolUseId, preEvent.sessionId)
+    }
   }
 
   // Calculate duration for post_tool_use
@@ -1383,6 +1704,14 @@ function processEvent(event: ClaudeEvent): ClaudeEvent {
       postEvent.duration = postEvent.timestamp - preEvent.timestamp
       pendingToolUses.delete(postEvent.toolUseId)
       debug(`Tool ${postEvent.tool} took ${postEvent.duration}ms`)
+    }
+
+    // Stop bash output streaming for Bash tools
+    if (postEvent.tool === 'Bash') {
+      const response = postEvent.toolResponse as { stdout?: string; stderr?: string } | undefined
+      const stdout = response?.stdout ? String(response.stdout) : ''
+      const stderr = response?.stderr ? String(response.stderr) : ''
+      stopBashTracking(postEvent.toolUseId, stdout, stderr, postEvent.success)
     }
   }
 
@@ -1401,7 +1730,67 @@ function addEvent(event: ClaudeEvent) {
   if (seenEventIds.size > MAX_EVENTS * 2) {
     const idsToKeep = [...seenEventIds].slice(-MAX_EVENTS)
     seenEventIds.clear()
-    idsToKeep.forEach(id => seenEventIds.add(id))
+    idsToKeep.forEach((id) => seenEventIds.add(id))
+  }
+
+  // Handle session continuity for context clears
+  // When session_end with reason='clear' arrives, store pending continuation
+  if (event.type === 'session_end') {
+    const sessionEndEvent = event as import('../shared/types.js').SessionEndEvent
+    if (sessionEndEvent.reason === 'clear') {
+      const managedSession = findManagedSession(event.sessionId)
+      if (managedSession) {
+        // Store pending continuation keyed by cwd
+        pendingContinuations.set(event.cwd, {
+          managedSessionId: managedSession.id,
+          oldClaudeSessionId: event.sessionId,
+          cwd: event.cwd,
+          timestamp: Date.now(),
+        })
+
+        // Keep session alive (don't let it go idle yet - it's continuing)
+        // The working timeout will handle if continuation never arrives
+
+        // Clean up old mapping (the old sessionId is done)
+        claudeToManagedMap.delete(event.sessionId)
+
+        log(
+          `[Session] Context clear detected for "${managedSession.name}", awaiting continuation from cwd: ${event.cwd}`
+        )
+      }
+    }
+  }
+
+  // When session_start with source='clear' arrives, try to relink to pending continuation
+  if (event.type === 'session_start') {
+    const sessionStartEvent = event as import('../shared/types.js').SessionStartEvent
+    if (sessionStartEvent.source === 'clear') {
+      const pending = pendingContinuations.get(event.cwd)
+
+      if (pending && Date.now() - pending.timestamp < CONTINUATION_TIMEOUT_MS) {
+        // Found matching continuation!
+        const managedSession = managedSessions.get(pending.managedSessionId)
+
+        if (managedSession) {
+          // Relink: new sessionId → same managed session
+          claudeToManagedMap.set(event.sessionId, managedSession.id)
+          managedSession.claudeSessionId = event.sessionId
+          managedSession.status = 'idle'
+          managedSession.lastActivity = Date.now()
+
+          log(
+            `[Session] Continuation linked: ${pending.oldClaudeSessionId.slice(0, 8)} → ${event.sessionId.slice(0, 8)} for "${managedSession.name}"`
+          )
+
+          // Broadcast updated session info so client can migrate the zone
+          broadcastSessions()
+          saveSessions()
+        }
+
+        // Clean up pending record
+        pendingContinuations.delete(event.cwd)
+      }
+    }
   }
 
   const processed = processEvent(event)
@@ -1466,8 +1855,20 @@ function loadEventsFromFile() {
     return
   }
 
-  const content = readFileSync(EVENTS_FILE, 'utf-8')
+  let content: string
+  try {
+    content = readFileSync(EVENTS_FILE, 'utf-8')
+  } catch (e) {
+    // File I/O error - log and continue with empty events
+    logger.error('file', 'Failed to read events file', {
+      path: EVENTS_FILE,
+      error: String(e),
+    })
+    return
+  }
+
   const lines = content.trim().split('\n').filter(Boolean)
+  let parseErrors = 0
 
   for (const line of lines) {
     try {
@@ -1475,12 +1876,15 @@ function loadEventsFromFile() {
       processEvent(event)
       events.push(event)
     } catch (e) {
+      parseErrors++
       debug(`Failed to parse event line: ${line}`)
     }
   }
 
   lastFileSize = content.length
-  log(`Loaded ${events.length} events from file`)
+  log(
+    `Loaded ${events.length} events from file${parseErrors > 0 ? ` (${parseErrors} parse errors)` : ''}`
+  )
 }
 
 function watchEventsFile() {
@@ -1608,35 +2012,39 @@ function handleHttpRequest(req: IncomingMessage, res: ServerResponse) {
   }
 
   if (req.method === 'POST' && req.url === '/event') {
-    collectRequestBody(req).then(body => {
-      try {
-        const event = JSON.parse(body) as ClaudeEvent
-        addEvent(event)
-        debug(`Received event via HTTP: ${event.type}`)
-        res.writeHead(200, { 'Content-Type': 'application/json' })
-        res.end(JSON.stringify({ ok: true }))
-      } catch (e) {
-        debug(`Failed to parse HTTP event: ${e}`)
-        res.writeHead(400, { 'Content-Type': 'application/json' })
-        res.end(JSON.stringify({ error: 'Invalid JSON' }))
-      }
-    }).catch(() => {
-      res.writeHead(413, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({ error: 'Request body too large' }))
-    })
+    collectRequestBody(req)
+      .then((body) => {
+        try {
+          const event = JSON.parse(body) as ClaudeEvent
+          addEvent(event)
+          debug(`Received event via HTTP: ${event.type}`)
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ ok: true }))
+        } catch (e) {
+          debug(`Failed to parse HTTP event: ${e}`)
+          res.writeHead(400, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: 'Invalid JSON' }))
+        }
+      })
+      .catch(() => {
+        res.writeHead(413, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ error: 'Request body too large' }))
+      })
     return
   }
 
   // Health check
   if (req.method === 'GET' && req.url === '/health') {
     res.writeHead(200, { 'Content-Type': 'application/json' })
-    res.end(JSON.stringify({
-      ok: true,
-      version: VERSION,
-      clients: clients.size,
-      events: events.length,
-      voiceEnabled: !!deepgramApiKey,
-    }))
+    res.end(
+      JSON.stringify({
+        ok: true,
+        version: VERSION,
+        clients: clients.size,
+        events: events.length,
+        voiceEnabled: !!deepgramApiKey,
+      })
+    )
     return
   }
 
@@ -1645,11 +2053,13 @@ function handleHttpRequest(req: IncomingMessage, res: ServerResponse) {
     const username = process.env.USER || process.env.USERNAME || 'claude-user'
     const host = hostname()
     res.writeHead(200, { 'Content-Type': 'application/json' })
-    res.end(JSON.stringify({
-      username,
-      hostname: host,
-      tmuxSession: TMUX_SESSION,
-    }))
+    res.end(
+      JSON.stringify({
+        username,
+        hostname: host,
+        tmuxSession: TMUX_SESSION,
+      })
+    )
     return
   }
 
@@ -1671,9 +2081,7 @@ function handleHttpRequest(req: IncomingMessage, res: ServerResponse) {
 
     const avgDurations: Record<string, number> = {}
     for (const [tool, durations] of Object.entries(toolDurations)) {
-      avgDurations[tool] = Math.round(
-        durations.reduce((a, b) => a + b, 0) / durations.length
-      )
+      avgDurations[tool] = Math.round(durations.reduce((a, b) => a + b, 0) / durations.length)
     }
 
     // Collect token data
@@ -1683,12 +2091,14 @@ function handleHttpRequest(req: IncomingMessage, res: ServerResponse) {
     }
 
     res.writeHead(200, { 'Content-Type': 'application/json' })
-    res.end(JSON.stringify({
-      totalEvents: events.length,
-      toolCounts,
-      avgDurations,
-      tokens,
-    }))
+    res.end(
+      JSON.stringify({
+        totalEvents: events.length,
+        toolCounts,
+        avgDurations,
+        tokens,
+      })
+    )
     return
   }
 
@@ -1701,56 +2111,60 @@ function handleHttpRequest(req: IncomingMessage, res: ServerResponse) {
 
   // Submit prompt from browser
   if (req.method === 'POST' && req.url === '/prompt') {
-    collectRequestBody(req).then(body => {
-      try {
-        const { prompt, send } = JSON.parse(body) as { prompt: string; send?: boolean }
-        if (!prompt || typeof prompt !== 'string') {
+    collectRequestBody(req)
+      .then((body) => {
+        try {
+          const { prompt, send } = JSON.parse(body) as { prompt: string; send?: boolean }
+          if (!prompt || typeof prompt !== 'string') {
+            res.writeHead(400, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'Prompt is required' }))
+            return
+          }
+
+          // Write prompt to file
+          const dir = dirname(PENDING_PROMPT_FILE)
+          if (!existsSync(dir)) {
+            mkdirSync(dir, { recursive: true })
+          }
+          writeFileSync(PENDING_PROMPT_FILE, prompt, 'utf-8')
+          log(`Prompt saved: ${prompt.slice(0, 50)}...`)
+
+          // If send=true, inject into tmux session
+          if (send) {
+            // Use safe helper to prevent command injection
+            sendToTmuxSafe(TMUX_SESSION, prompt)
+              .then(() => {
+                log(`Prompt sent to tmux session: ${TMUX_SESSION}`)
+                res.writeHead(200, { 'Content-Type': 'application/json' })
+                res.end(JSON.stringify({ ok: true, saved: PENDING_PROMPT_FILE, sent: true }))
+              })
+              .catch((error) => {
+                log(`tmux send failed: ${error.message}`)
+                res.writeHead(200, { 'Content-Type': 'application/json' })
+                res.end(
+                  JSON.stringify({
+                    ok: true,
+                    saved: PENDING_PROMPT_FILE,
+                    sent: false,
+                    tmuxError: error.message,
+                  })
+                )
+              })
+            return
+          }
+
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ ok: true, saved: PENDING_PROMPT_FILE }))
+        } catch (e) {
+          debug(`Failed to save prompt: ${e}`)
           res.writeHead(400, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ error: 'Prompt is required' }))
-          return
+          res.end(JSON.stringify({ error: 'Invalid JSON' }))
         }
-
-        // Write prompt to file
-        const dir = dirname(PENDING_PROMPT_FILE)
-        if (!existsSync(dir)) {
-          mkdirSync(dir, { recursive: true })
-        }
-        writeFileSync(PENDING_PROMPT_FILE, prompt, 'utf-8')
-        log(`Prompt saved: ${prompt.slice(0, 50)}...`)
-
-        // If send=true, inject into tmux session
-        if (send) {
-          // Use safe helper to prevent command injection
-          sendToTmuxSafe(TMUX_SESSION, prompt)
-            .then(() => {
-              log(`Prompt sent to tmux session: ${TMUX_SESSION}`)
-              res.writeHead(200, { 'Content-Type': 'application/json' })
-              res.end(JSON.stringify({ ok: true, saved: PENDING_PROMPT_FILE, sent: true }))
-            })
-            .catch((error) => {
-              log(`tmux send failed: ${error.message}`)
-              res.writeHead(200, { 'Content-Type': 'application/json' })
-              res.end(JSON.stringify({
-                ok: true,
-                saved: PENDING_PROMPT_FILE,
-                sent: false,
-                tmuxError: error.message
-              }))
-            })
-          return
-        }
-
-        res.writeHead(200, { 'Content-Type': 'application/json' })
-        res.end(JSON.stringify({ ok: true, saved: PENDING_PROMPT_FILE }))
-      } catch (e) {
-        debug(`Failed to save prompt: ${e}`)
-        res.writeHead(400, { 'Content-Type': 'application/json' })
-        res.end(JSON.stringify({ error: 'Invalid JSON' }))
-      }
-    }).catch(() => {
-      res.writeHead(413, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({ error: 'Request body too large' }))
-    })
+      })
+      .catch(() => {
+        res.writeHead(413, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ error: 'Request body too large' }))
+      })
     return
   }
 
@@ -1789,15 +2203,20 @@ function handleHttpRequest(req: IncomingMessage, res: ServerResponse) {
     }
 
     // Capture last 100 lines from tmux pane
-    execFile('tmux', ['capture-pane', '-t', TMUX_SESSION, '-p', '-S', '-100'], { ...EXEC_OPTIONS, maxBuffer: 1024 * 1024 }, (error, stdout) => {
-      if (error) {
+    execFile(
+      'tmux',
+      ['capture-pane', '-t', TMUX_SESSION, '-p', '-S', '-100'],
+      { ...EXEC_OPTIONS, maxBuffer: 1024 * 1024 },
+      (error, stdout) => {
+        if (error) {
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ ok: false, error: error.message, output: '' }))
+          return
+        }
         res.writeHead(200, { 'Content-Type': 'application/json' })
-        res.end(JSON.stringify({ ok: false, error: error.message, output: '' }))
-        return
+        res.end(JSON.stringify({ ok: true, output: stdout }))
       }
-      res.writeHead(200, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({ ok: true, output: stdout }))
-    })
+    )
     return
   }
 
@@ -1854,49 +2273,53 @@ function handleHttpRequest(req: IncomingMessage, res: ServerResponse) {
 
   // Create an implicit session (external Claude, no tmux control)
   if (req.method === 'POST' && req.url === '/sessions/implicit') {
-    collectRequestBody(req).then(body => {
-      try {
-        if (!body) {
-          res.writeHead(400, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ ok: false, error: 'Request body required' }))
-          return
+    collectRequestBody(req)
+      .then((body) => {
+        try {
+          if (!body) {
+            res.writeHead(400, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ ok: false, error: 'Request body required' }))
+            return
+          }
+          const options = JSON.parse(body) as CreateImplicitSessionRequest
+          if (!options.claudeSessionId) {
+            res.writeHead(400, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ ok: false, error: 'claudeSessionId is required' }))
+            return
+          }
+          const session = createImplicitSession(options)
+          res.writeHead(201, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ ok: true, session }))
+        } catch (e) {
+          res.writeHead(500, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ ok: false, error: (e as Error).message }))
         }
-        const options = JSON.parse(body) as CreateImplicitSessionRequest
-        if (!options.claudeSessionId) {
-          res.writeHead(400, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ ok: false, error: 'claudeSessionId is required' }))
-          return
-        }
-        const session = createImplicitSession(options)
-        res.writeHead(201, { 'Content-Type': 'application/json' })
-        res.end(JSON.stringify({ ok: true, session }))
-      } catch (e) {
-        res.writeHead(500, { 'Content-Type': 'application/json' })
-        res.end(JSON.stringify({ ok: false, error: (e as Error).message }))
-      }
-    }).catch(() => {
-      res.writeHead(413, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({ error: 'Request body too large' }))
-    })
+      })
+      .catch(() => {
+        res.writeHead(413, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ error: 'Request body too large' }))
+      })
     return
   }
 
   // Create a new session
   if (req.method === 'POST' && req.url === '/sessions') {
-    collectRequestBody(req).then(async body => {
-      try {
-        const options = body ? JSON.parse(body) as CreateSessionRequest : {}
-        const session = await createSession(options)
-        res.writeHead(201, { 'Content-Type': 'application/json' })
-        res.end(JSON.stringify({ ok: true, session }))
-      } catch (e) {
-        res.writeHead(500, { 'Content-Type': 'application/json' })
-        res.end(JSON.stringify({ ok: false, error: (e as Error).message }))
-      }
-    }).catch(() => {
-      res.writeHead(413, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({ error: 'Request body too large' }))
-    })
+    collectRequestBody(req)
+      .then(async (body) => {
+        try {
+          const options = body ? (JSON.parse(body) as CreateSessionRequest) : {}
+          const session = await createSession(options)
+          res.writeHead(201, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ ok: true, session }))
+        } catch (e) {
+          res.writeHead(500, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ ok: false, error: (e as Error).message }))
+        }
+      })
+      .catch(() => {
+        res.writeHead(413, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ error: 'Request body too large' }))
+      })
     return
   }
 
@@ -1951,25 +2374,27 @@ function handleHttpRequest(req: IncomingMessage, res: ServerResponse) {
 
     // PATCH /sessions/:id - Update session (rename)
     if (req.method === 'PATCH' && !action) {
-      collectRequestBody(req).then(body => {
-        try {
-          const updates = JSON.parse(body) as UpdateSessionRequest
-          const session = updateSession(sessionId, updates)
-          if (session) {
-            res.writeHead(200, { 'Content-Type': 'application/json' })
-            res.end(JSON.stringify({ ok: true, session }))
-          } else {
-            res.writeHead(404, { 'Content-Type': 'application/json' })
-            res.end(JSON.stringify({ ok: false, error: 'Session not found' }))
+      collectRequestBody(req)
+        .then((body) => {
+          try {
+            const updates = JSON.parse(body) as UpdateSessionRequest
+            const session = updateSession(sessionId, updates)
+            if (session) {
+              res.writeHead(200, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({ ok: true, session }))
+            } else {
+              res.writeHead(404, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({ ok: false, error: 'Session not found' }))
+            }
+          } catch (e) {
+            res.writeHead(400, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ ok: false, error: 'Invalid JSON' }))
           }
-        } catch (e) {
-          res.writeHead(400, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ ok: false, error: 'Invalid JSON' }))
-        }
-      }).catch(() => {
-        res.writeHead(413, { 'Content-Type': 'application/json' })
-        res.end(JSON.stringify({ error: 'Request body too large' }))
-      })
+        })
+        .catch(() => {
+          res.writeHead(413, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: 'Request body too large' }))
+        })
       return
     }
 
@@ -1989,25 +2414,27 @@ function handleHttpRequest(req: IncomingMessage, res: ServerResponse) {
 
     // POST /sessions/:id/prompt - Send prompt to specific session
     if (req.method === 'POST' && action === 'prompt') {
-      collectRequestBody(req).then(async body => {
-        try {
-          const { prompt } = JSON.parse(body) as SessionPromptRequest
-          if (!prompt) {
+      collectRequestBody(req)
+        .then(async (body) => {
+          try {
+            const { prompt } = JSON.parse(body) as SessionPromptRequest
+            if (!prompt) {
+              res.writeHead(400, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({ ok: false, error: 'Prompt is required' }))
+              return
+            }
+            const result = await sendPromptToSession(sessionId, prompt)
+            res.writeHead(result.ok ? 200 : 404, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify(result))
+          } catch (e) {
             res.writeHead(400, { 'Content-Type': 'application/json' })
-            res.end(JSON.stringify({ ok: false, error: 'Prompt is required' }))
-            return
+            res.end(JSON.stringify({ ok: false, error: 'Invalid JSON' }))
           }
-          const result = await sendPromptToSession(sessionId, prompt)
-          res.writeHead(result.ok ? 200 : 404, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify(result))
-        } catch (e) {
-          res.writeHead(400, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ ok: false, error: 'Invalid JSON' }))
-        }
-      }).catch(() => {
-        res.writeHead(413, { 'Content-Type': 'application/json' })
-        res.end(JSON.stringify({ error: 'Request body too large' }))
-      })
+        })
+        .catch(() => {
+          res.writeHead(413, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: 'Request body too large' }))
+        })
       return
     }
 
@@ -2049,26 +2476,28 @@ function handleHttpRequest(req: IncomingMessage, res: ServerResponse) {
         return
       }
 
-      collectRequestBody(req).then(body => {
-        try {
-          const { response } = JSON.parse(body) as { response: string }
-          if (!response) {
-            res.writeHead(400, { 'Content-Type': 'application/json' })
-            res.end(JSON.stringify({ ok: false, error: 'Missing response field' }))
-            return
-          }
+      collectRequestBody(req)
+        .then((body) => {
+          try {
+            const { response } = JSON.parse(body) as { response: string }
+            if (!response) {
+              res.writeHead(400, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({ ok: false, error: 'Missing response field' }))
+              return
+            }
 
-          sendPermissionResponse(sessionId, response)
-          res.writeHead(200, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ ok: true }))
-        } catch (e) {
-          res.writeHead(400, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ ok: false, error: 'Invalid JSON' }))
-        }
-      }).catch(() => {
-        res.writeHead(413, { 'Content-Type': 'application/json' })
-        res.end(JSON.stringify({ error: 'Request body too large' }))
-      })
+            sendPermissionResponse(sessionId, response)
+            res.writeHead(200, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ ok: true }))
+          } catch (e) {
+            res.writeHead(400, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ ok: false, error: 'Invalid JSON' }))
+          }
+        })
+        .catch(() => {
+          res.writeHead(413, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: 'Request body too large' }))
+        })
       return
     }
 
@@ -2095,81 +2524,95 @@ function handleHttpRequest(req: IncomingMessage, res: ServerResponse) {
         cwd = validateDirectoryPath(session.cwd || process.cwd())
       } catch (err) {
         res.writeHead(400, { 'Content-Type': 'application/json' })
-        res.end(JSON.stringify({ ok: false, error: `Invalid directory: ${err instanceof Error ? err.message : err}` }))
+        res.end(
+          JSON.stringify({
+            ok: false,
+            error: `Invalid directory: ${err instanceof Error ? err.message : err}`,
+          })
+        )
         return
       }
 
       // Kill existing tmux session if it exists (ignore errors)
       execFile('tmux', ['kill-session', '-t', session.tmuxSession], EXEC_OPTIONS, () => {
         // Respawn tmux session with claude using execFile
-        execFile('tmux', [
-          'new-session',
-          '-d',
-          '-s', session.tmuxSession,
-          '-c', cwd,
-          `PATH=${EXEC_PATH} claude -c --permission-mode=bypassPermissions --dangerously-skip-permissions`
-        ], EXEC_OPTIONS, (error) => {
-          if (error) {
-            res.writeHead(500, { 'Content-Type': 'application/json' })
-            res.end(JSON.stringify({ ok: false, error: `Failed to restart: ${error.message}` }))
-            return
-          }
-
-          // Update session state
-          session.status = 'idle'
-          session.lastActivity = Date.now()
-          session.claudeSessionId = undefined // Will be re-linked when events come in
-          session.currentTool = undefined
-
-          // Clear old linking
-          for (const [claudeId, managedId] of claudeToManagedMap) {
-            if (managedId === session.id) {
-              claudeToManagedMap.delete(claudeId)
+        execFile(
+          'tmux',
+          [
+            'new-session',
+            '-d',
+            '-s',
+            session.tmuxSession,
+            '-c',
+            cwd,
+            `PATH=${EXEC_PATH} claude -c --permission-mode=bypassPermissions --dangerously-skip-permissions`,
+          ],
+          EXEC_OPTIONS,
+          (error) => {
+            if (error) {
+              res.writeHead(500, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({ ok: false, error: `Failed to restart: ${error.message}` }))
+              return
             }
+
+            // Update session state
+            session.status = 'idle'
+            session.lastActivity = Date.now()
+            session.claudeSessionId = undefined // Will be re-linked when events come in
+            session.currentTool = undefined
+
+            // Clear old linking
+            for (const [claudeId, managedId] of claudeToManagedMap) {
+              if (managedId === session.id) {
+                claudeToManagedMap.delete(claudeId)
+              }
+            }
+
+            log(`Restarted session: ${session.name} (${session.id.slice(0, 8)})`)
+            broadcastSessions()
+            saveSessions()
+
+            res.writeHead(200, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ ok: true, session }))
           }
-
-          log(`Restarted session: ${session.name} (${session.id.slice(0, 8)})`)
-          broadcastSessions()
-          saveSessions()
-
-          res.writeHead(200, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ ok: true, session }))
-        })
+        )
       })
       return
     }
 
     // POST /sessions/:id/link - Link Claude session ID to managed session
     if (req.method === 'POST' && action === 'link') {
-      collectRequestBody(req).then(body => {
-        try {
-          const { claudeSessionId } = JSON.parse(body) as { claudeSessionId: string }
-          if (!claudeSessionId) {
+      collectRequestBody(req)
+        .then((body) => {
+          try {
+            const { claudeSessionId } = JSON.parse(body) as { claudeSessionId: string }
+            if (!claudeSessionId) {
+              res.writeHead(400, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({ ok: false, error: 'claudeSessionId is required' }))
+              return
+            }
+            const session = getSession(sessionId)
+            if (!session) {
+              res.writeHead(404, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({ ok: false, error: 'Session not found' }))
+              return
+            }
+            linkClaudeSession(claudeSessionId, sessionId)
+            session.claudeSessionId = claudeSessionId
+            log(`Linked Claude session ${claudeSessionId.slice(0, 8)} to ${session.name}`)
+            broadcastSessions()
+            saveSessions()
+            res.writeHead(200, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ ok: true, session }))
+          } catch (e) {
             res.writeHead(400, { 'Content-Type': 'application/json' })
-            res.end(JSON.stringify({ ok: false, error: 'claudeSessionId is required' }))
-            return
+            res.end(JSON.stringify({ ok: false, error: 'Invalid JSON' }))
           }
-          const session = getSession(sessionId)
-          if (!session) {
-            res.writeHead(404, { 'Content-Type': 'application/json' })
-            res.end(JSON.stringify({ ok: false, error: 'Session not found' }))
-            return
-          }
-          linkClaudeSession(claudeSessionId, sessionId)
-          session.claudeSessionId = claudeSessionId
-          log(`Linked Claude session ${claudeSessionId.slice(0, 8)} to ${session.name}`)
-          broadcastSessions()
-          saveSessions()
-          res.writeHead(200, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ ok: true, session }))
-        } catch (e) {
-          res.writeHead(400, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ ok: false, error: 'Invalid JSON' }))
-        }
-      }).catch(() => {
-        res.writeHead(413, { 'Content-Type': 'application/json' })
-        res.end(JSON.stringify({ error: 'Request body too large' }))
-      })
+        })
+        .catch(() => {
+          res.writeHead(413, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: 'Request body too large' }))
+        })
       return
     }
   }
@@ -2187,39 +2630,41 @@ function handleHttpRequest(req: IncomingMessage, res: ServerResponse) {
 
   // POST /tiles - Create a new text tile
   if (req.method === 'POST' && req.url === '/tiles') {
-    collectRequestBody(req).then(body => {
-      try {
-        const data = JSON.parse(body) as CreateTextTileRequest
+    collectRequestBody(req)
+      .then((body) => {
+        try {
+          const data = JSON.parse(body) as CreateTextTileRequest
 
-        if (!data.text || !data.position) {
+          if (!data.text || !data.position) {
+            res.writeHead(400, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ ok: false, error: 'Missing text or position' }))
+            return
+          }
+
+          const tile: TextTile = {
+            id: crypto.randomUUID(),
+            text: data.text,
+            position: data.position,
+            color: data.color,
+            createdAt: Date.now(),
+          }
+
+          textTiles.set(tile.id, tile)
+          saveTiles()
+          broadcastTiles()
+
+          log(`Created text tile: "${tile.text}" at (${tile.position.q}, ${tile.position.r})`)
+          res.writeHead(201, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ ok: true, tile }))
+        } catch (e) {
           res.writeHead(400, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ ok: false, error: 'Missing text or position' }))
-          return
+          res.end(JSON.stringify({ ok: false, error: 'Invalid JSON' }))
         }
-
-        const tile: TextTile = {
-          id: crypto.randomUUID(),
-          text: data.text,
-          position: data.position,
-          color: data.color,
-          createdAt: Date.now(),
-        }
-
-        textTiles.set(tile.id, tile)
-        saveTiles()
-        broadcastTiles()
-
-        log(`Created text tile: "${tile.text}" at (${tile.position.q}, ${tile.position.r})`)
-        res.writeHead(201, { 'Content-Type': 'application/json' })
-        res.end(JSON.stringify({ ok: true, tile }))
-      } catch (e) {
-        res.writeHead(400, { 'Content-Type': 'application/json' })
-        res.end(JSON.stringify({ ok: false, error: 'Invalid JSON' }))
-      }
-    }).catch(() => {
-      res.writeHead(413, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({ error: 'Request body too large' }))
-    })
+      })
+      .catch(() => {
+        res.writeHead(413, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ error: 'Request body too large' }))
+      })
     return
   }
 
@@ -2237,28 +2682,30 @@ function handleHttpRequest(req: IncomingMessage, res: ServerResponse) {
         return
       }
 
-      collectRequestBody(req).then(body => {
-        try {
-          const data = JSON.parse(body) as UpdateTextTileRequest
+      collectRequestBody(req)
+        .then((body) => {
+          try {
+            const data = JSON.parse(body) as UpdateTextTileRequest
 
-          if (data.text !== undefined) tile.text = data.text
-          if (data.position !== undefined) tile.position = data.position
-          if (data.color !== undefined) tile.color = data.color
+            if (data.text !== undefined) tile.text = data.text
+            if (data.position !== undefined) tile.position = data.position
+            if (data.color !== undefined) tile.color = data.color
 
-          saveTiles()
-          broadcastTiles()
+            saveTiles()
+            broadcastTiles()
 
-          log(`Updated text tile: "${tile.text}"`)
-          res.writeHead(200, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ ok: true, tile }))
-        } catch (e) {
-          res.writeHead(400, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ ok: false, error: 'Invalid JSON' }))
-        }
-      }).catch(() => {
-        res.writeHead(413, { 'Content-Type': 'application/json' })
-        res.end(JSON.stringify({ error: 'Request body too large' }))
-      })
+            log(`Updated text tile: "${tile.text}"`)
+            res.writeHead(200, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ ok: true, tile }))
+          } catch (e) {
+            res.writeHead(400, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ ok: false, error: 'Invalid JSON' }))
+          }
+        })
+        .catch(() => {
+          res.writeHead(413, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: 'Request body too large' }))
+        })
       return
     }
 
@@ -2376,7 +2823,9 @@ function main() {
   gitStatusManager.setUpdateHandler(({ sessionId, status }) => {
     const session = managedSessions.get(sessionId)
     if (session) {
-      debug(`Git status updated for ${session.name}: ${status.branch} +${status.linesAdded}/-${status.linesRemoved}`)
+      debug(
+        `Git status updated for ${session.name}: ${status.branch} +${status.linesAdded}/-${status.linesRemoved}`
+      )
       // Broadcast updated sessions to all clients
       broadcastSessions()
     }
@@ -2451,7 +2900,20 @@ function main() {
         const message = JSON.parse(data.toString()) as ClientMessage
         handleClientMessage(ws, message)
       } catch (e) {
-        debug(`Failed to parse client message: ${e}`)
+        logger.warn('parsing', 'Failed to parse client message', {
+          error: String(e),
+          dataLength: data.toString().length,
+        })
+        // Send error back to client so they know something went wrong
+        try {
+          const errorMsg: ServerMessage = {
+            type: 'error',
+            payload: { message: `Invalid message format: ${(e as Error).message}` },
+          }
+          ws.send(JSON.stringify(errorMsg))
+        } catch {
+          // Ignore send errors - connection may be closing
+        }
       }
     })
 
@@ -2492,6 +2954,9 @@ function main() {
 
     // Start working timeout checking (every 10 seconds)
     setInterval(checkWorkingTimeout, WORKING_CHECK_INTERVAL_MS)
+
+    // Start orphaned entry cleanup (every 60 seconds)
+    setInterval(cleanupOrphanedEntries, CLEANUP_INTERVAL_MS)
 
     // Run initial health check to update session statuses
     checkSessionHealth()

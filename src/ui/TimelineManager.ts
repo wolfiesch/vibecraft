@@ -18,6 +18,8 @@ export class TimelineManager {
   private eventIds = new Set<string>()
   private pendingIcons = new Map<string, HTMLElement>()
   private completedToolUses = new Set<string>()
+  // Track toolUseIds to prevent duplicate tool icons on reconnect
+  private seenToolUseIds = new Set<string>()
 
   // Configuration
   private maxIcons = 50
@@ -62,6 +64,12 @@ export class TimelineManager {
       const e = event as PostToolUseEvent
       this.completedToolUses.add(e.toolUseId)
 
+      // Check if we've already seen this toolUseId (prevents duplicates on reconnect)
+      if (this.seenToolUseIds.has(e.toolUseId) && !this.pendingIcons.has(e.toolUseId)) {
+        // Already have an icon for this tool use and no pending to update
+        return
+      }
+
       const existing = this.pendingIcons.get(e.toolUseId)
       if (existing) {
         existing.classList.remove('pending')
@@ -83,6 +91,13 @@ export class TimelineManager {
     // Handle pre_tool_use - create pending or already-completed icon
     if (event.type === 'pre_tool_use') {
       const e = event as PreToolUseEvent
+
+      // Skip if we've already seen this toolUseId (prevents duplicates on reconnect)
+      if (this.seenToolUseIds.has(e.toolUseId)) {
+        return
+      }
+      this.seenToolUseIds.add(e.toolUseId)
+
       const icon = this.createIcon(event)
       applySessionColor(icon)
       this.appendIcon(icon)
@@ -120,6 +135,7 @@ export class TimelineManager {
     this.eventIds.clear()
     this.pendingIcons.clear()
     this.completedToolUses.clear()
+    this.seenToolUseIds.clear()
   }
 
   /**

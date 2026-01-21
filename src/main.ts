@@ -20,6 +20,9 @@ import {
   type PreToolUseEvent,
   type PostToolUseEvent,
   type ManagedSession,
+  type StationStats,
+  type FileNode,
+  createEmptyStationStats,
 } from '../shared/types'
 import { soundManager } from './audio'
 
@@ -52,6 +55,12 @@ import { setupDirectoryAutocomplete } from './ui/DirectoryAutocomplete'
 import { checkForUpdates } from './ui/VersionChecker'
 import { drawMode } from './ui/DrawMode'
 import { setupTextLabelModal, showTextLabelModal } from './ui/TextLabelModal'
+import {
+  setupStationDetailPanel,
+  showStationDetailPanel,
+  hideStationDetailPanel,
+  isStationDetailPanelVisible,
+} from './ui/StationDetailPanel'
 import { createSessionAPI, type SessionAPI } from './api'
 import { replayController, ReplaySceneManager, type SceneSnapshot } from './replay'
 import { setupReplayControls, type ReplayControls } from './ui/ReplayControls'
@@ -103,6 +112,10 @@ interface SessionState {
     filesTouched: Set<string>
     activeSubagents: number
   }
+  /** Station-specific statistics for detail panels */
+  stationStats: StationStats
+  /** File constellation data (session-scoped diff) */
+  fileConstellation: Map<string, FileNode>
 }
 
 interface AppState {
@@ -216,6 +229,10 @@ function renderManagedSessions(): void {
     if (session.id === state.selectedManagedSession) {
       el.classList.add('active')
     }
+    // Add external class for implicit sessions (visually distinct)
+    if (session.implicit === true) {
+      el.classList.add('external')
+    }
 
     // Check if session needs attention
     const needsAttention = state.attentionSystem?.needsAttention(session.id) ?? false
@@ -291,7 +308,7 @@ function renderManagedSessions(): void {
       <div class="session-status ${statusClass}"></div>
       <div class="session-info">
         <div class="session-name">
-          ${escapeHtml(session.name)}
+          ${isImplicit ? '<span class="external-icon">🔗</span>' : ''}${escapeHtml(session.name)}
           ${isImplicit ? '<span class="session-badge external" title="External Claude session (no tmux control)">ext</span>' : ''}
         </div>
         <div class="${detailClass}">${detail}${!needsAttention && session.status !== 'offline' && lastActive ? ` · ${lastActive}` : ''}</div>
@@ -313,29 +330,41 @@ function renderManagedSessions(): void {
     })
 
     // Rename button
-    el.querySelector('.rename-btn')?.addEventListener('click', (e) => {
+    el.querySelector('.rename-btn')?.addEventListener('click', async (e) => {
       e.stopPropagation()
       const newName = prompt('Enter new name:', session.name)
       if (newName && newName !== session.name) {
-        renameManagedSession(session.id, newName)
+        try {
+          await renameManagedSession(session.id, newName)
+        } catch (err) {
+          toast.error(`Failed to rename: ${(err as Error).message}`)
+        }
       }
     })
 
     // Delete button
-    el.querySelector('.delete-btn')?.addEventListener('click', (e) => {
+    el.querySelector('.delete-btn')?.addEventListener('click', async (e) => {
       e.stopPropagation()
       const confirmMsg = isImplicit
         ? `Remove "${session.name}" from the list? (This won't affect the external Claude session)`
         : `Delete session "${session.name}"?`
       if (confirm(confirmMsg)) {
-        deleteManagedSession(session.id)
+        try {
+          await deleteManagedSession(session.id)
+        } catch (err) {
+          toast.error(`Failed to delete: ${(err as Error).message}`)
+        }
       }
     })
 
     // Restart button (only shown for offline sessions)
-    el.querySelector('.restart-btn')?.addEventListener('click', (e) => {
+    el.querySelector('.restart-btn')?.addEventListener('click', async (e) => {
       e.stopPropagation()
-      restartManagedSession(session.id, session.name)
+      try {
+        await restartManagedSession(session.id, session.name)
+      } catch (err) {
+        toast.error(`Failed to restart: ${(err as Error).message}`)
+      }
     })
 
     container.appendChild(el)
@@ -409,11 +438,11 @@ async function createManagedSession(
 
   if (!data.ok) {
     console.error('Failed to create session:', data.error)
-    // Show offline banner if not connected, otherwise show alert
+    // Show offline banner if not connected, otherwise show toast
     if (!state.client?.isConnected) {
       showOfflineBanner()
     } else {
-      alert(`Failed to create session: ${data.error}`)
+      toast.error(`Failed to create session: ${data.error}`)
     }
     // Clean up pending zone on failure
     if (pendingZoneId && state.scene) {
@@ -463,6 +492,7 @@ async function renameManagedSession(sessionId: string, name: string): Promise<vo
   const data = await sessionAPI.renameSession(sessionId, name)
   if (!data.ok) {
     console.error('Failed to rename session:', data.error)
+    toast.error(`Failed to rename session: ${data.error}`)
   }
   // Update will be broadcast via WebSocket
 }
@@ -477,6 +507,7 @@ async function saveZonePosition(
   const data = await sessionAPI.saveZonePosition(sessionId, position)
   if (!data.ok) {
     console.error('Failed to save zone position:', data.error)
+    // Silent failure for zone position - not critical enough for toast
   }
 }
 
@@ -487,6 +518,8 @@ async function deleteManagedSession(sessionId: string): Promise<void> {
   const data = await sessionAPI.deleteSession(sessionId)
   if (!data.ok) {
     console.error('Failed to delete session:', data.error)
+    toast.error(`Failed to delete session: ${data.error}`)
+    return
   }
   // If we deleted the selected session, clear selection
   if (state.selectedManagedSession === sessionId) {
@@ -849,7 +882,7 @@ async function createTextTileAtHex(hex: { q: number; r: number }): Promise<void>
   if (!text?.trim()) return
 
   try {
-    await fetch(`${API_URL}/tiles`, {
+    const response = await fetch(`${API_URL}/tiles`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -857,8 +890,12 @@ async function createTextTileAtHex(hex: { q: number; r: number }): Promise<void>
         position: hex,
       }),
     })
+    if (!response.ok) {
+      throw new Error(`Server returned ${response.status}`)
+    }
   } catch (e) {
     console.error('Failed to create text tile:', e)
+    toast.error(`Failed to create label: ${(e as Error).message}`)
   }
 }
 
@@ -877,13 +914,17 @@ async function editTextTile(tileId: string): Promise<void> {
   if (text === null || text.trim() === tile.text) return
 
   try {
-    await fetch(`${API_URL}/tiles/${tileId}`, {
+    const response = await fetch(`${API_URL}/tiles/${tileId}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ text: text.trim() }),
     })
+    if (!response.ok) {
+      throw new Error(`Server returned ${response.status}`)
+    }
   } catch (e) {
     console.error('Failed to update text tile:', e)
+    toast.error(`Failed to update label: ${(e as Error).message}`)
   }
 }
 
@@ -892,11 +933,15 @@ async function editTextTile(tileId: string): Promise<void> {
  */
 async function deleteTextTile(tileId: string): Promise<void> {
   try {
-    await fetch(`${API_URL}/tiles/${tileId}`, {
+    const response = await fetch(`${API_URL}/tiles/${tileId}`, {
       method: 'DELETE',
     })
+    if (!response.ok) {
+      throw new Error(`Server returned ${response.status}`)
+    }
   } catch (e) {
     console.error('Failed to delete text tile:', e)
+    toast.error(`Failed to delete label: ${(e as Error).message}`)
   }
 }
 
@@ -1097,6 +1142,46 @@ function setupClickToPrompt(): void {
     // In draw mode, skip zone/Claude focus - painting is handled in mousedown/mousemove
     if (drawMode.isEnabled()) {
       return
+    }
+
+    // First check if a specific station was clicked (for detail panel)
+    const stationClick = state.scene.getClickedStation(raycaster)
+    if (stationClick) {
+      const session = state.sessions.get(stationClick.sessionId)
+      if (session) {
+        // Show station detail panel
+        showStationDetailPanel(
+          stationClick.sessionId,
+          stationClick.station,
+          session.stationStats,
+          event.clientX,
+          event.clientY
+        )
+
+        // Also focus the zone if not already focused
+        if (state.focusedSessionId !== stationClick.sessionId) {
+          state.userChangedCamera = true
+          state.scene!.focusZone(stationClick.sessionId)
+          focusSession(stationClick.sessionId)
+
+          const managed = state.managedSessions.find(
+            (s) => s.claudeSessionId === stationClick.sessionId
+          )
+          if (managed) {
+            selectManagedSession(managed.id)
+            state.attentionSystem?.remove(managed.id)
+          } else {
+            selectManagedSession(null)
+            state.feedManager?.setFilter(stationClick.sessionId)
+          }
+        }
+        return
+      }
+    }
+
+    // Hide station detail panel if clicking elsewhere
+    if (isStationDetailPanelVisible()) {
+      hideStationDetailPanel()
     }
 
     // Check entire zone groups (platform, ring, stations, everything)
@@ -1512,6 +1597,8 @@ function getOrCreateSession(sessionId: string, eventCwd?: string): SessionState 
       filesTouched: new Set(),
       activeSubagents: 0,
     },
+    stationStats: createEmptyStationStats(),
+    fileConstellation: new Map(),
   }
 
   state.sessions.set(sessionId, session)
@@ -1657,30 +1744,47 @@ function exitReplayMode(): void {
 /**
  * Try to link a Claude session to a managed session
  * Uses timing: looks for unlinked managed sessions created in the last 30 seconds
+ *
+ * IMPORTANT: This function uses an optimistic update pattern:
+ * 1. Local claudeToManagedLink is updated for immediate UI responsiveness
+ * 2. Server is notified of the link via API
+ * 3. Server broadcasts authoritative session data
+ * 4. Client reconciles (server wins) in onSessions handler
+ *
+ * We deliberately DON'T mutate managed.claudeSessionId here - only the server
+ * should set that field. This prevents inconsistencies if the link fails or
+ * the server has different logic.
  */
 function tryLinkToManagedSession(claudeSessionId: string): ManagedSession | null {
   const now = Date.now()
   const LINK_WINDOW_MS = 30_000 // 30 seconds
 
-  // Check if already linked
+  // Check if already linked (from server data)
   if (claudeToManagedLink.has(claudeSessionId)) {
     const managedId = claudeToManagedLink.get(claudeSessionId)!
     return state.managedSessions.find((s) => s.id === managedId) || null
   }
 
+  // Also check server's authoritative claudeSessionId field
+  const alreadyLinked = state.managedSessions.find((m) => m.claudeSessionId === claudeSessionId)
+  if (alreadyLinked) {
+    // Update local map to match server
+    claudeToManagedLink.set(claudeSessionId, alreadyLinked.id)
+    return alreadyLinked
+  }
+
   // Find unlinked managed sessions created recently
   for (const managed of state.managedSessions) {
-    // Skip if already linked
+    // Skip if already linked (check server's authoritative field)
     if (managed.claudeSessionId) continue
 
     // Check if created recently
     const age = now - managed.createdAt
     if (age < LINK_WINDOW_MS) {
-      // Link them!
+      // Optimistic local update for responsive UI (will be reconciled on server broadcast)
       claudeToManagedLink.set(claudeSessionId, managed.id)
-      managed.claudeSessionId = claudeSessionId
 
-      // Notify server about the link
+      // Notify server - server will broadcast the authoritative update
       linkSessionOnServer(managed.id, claudeSessionId)
 
       return managed
@@ -1697,31 +1801,9 @@ async function linkSessionOnServer(managedId: string, claudeSessionId: string): 
   await sessionAPI.linkSession(managedId, claudeSessionId)
 }
 
-/**
- * Create an implicit managed session for an external Claude instance.
- * This allows unmanaged Claude sessions (started in a regular terminal) to get 3D zones.
- */
-function createImplicitManagedSession(claudeSessionId: string, cwd?: string): ManagedSession {
-  const shortId = claudeSessionId.slice(0, 8)
-  const managed: ManagedSession = {
-    id: `implicit-${claudeSessionId}`,
-    name: `Claude ${shortId}`,
-    tmuxSession: '', // Unknown - not spawned by Vibecraft
-    status: 'working',
-    claudeSessionId,
-    createdAt: Date.now(),
-    lastActivity: Date.now(),
-    cwd: cwd || '~',
-  }
-  state.managedSessions.push(managed)
-  claudeToManagedLink.set(claudeSessionId, managed.id)
-
-  // Re-render sessions list to show the new implicit session
-  renderManagedSessions()
-
-  console.log(`Created implicit managed session for external Claude ${shortId}`)
-  return managed
-}
+// NOTE: createImplicitManagedSession was removed as dead code.
+// Implicit sessions are now created by the server via sessionAPI.createImplicitSession().
+// The server broadcasts the new session, and the client receives it in onSessions handler.
 
 /**
  * Sync zone labels with managed session names
@@ -1767,14 +1849,16 @@ function syncZoneLabels(): void {
     const branch = managed.gitStatus?.branch
     state.scene.updateZoneLabel(zoneId, labelName, keybind, branch)
 
-    // Also create the link for future use
+    // Create optimistic local link for immediate UI responsiveness
+    // Don't mutate managed.claudeSessionId - let server set it authoritatively
     claudeToManagedLink.set(zoneId, managed.id)
-    managed.claudeSessionId = zoneId
 
-    // Notify server about the link
+    // Notify server - server will broadcast the authoritative update
     linkSessionOnServer(managed.id, zoneId)
 
-    console.log(`Auto-linked zone ${zoneId.slice(0, 8)} to managed session "${managed.name}"`)
+    console.log(
+      `Auto-linked zone ${zoneId.slice(0, 8)} to managed session "${managed.name}" (awaiting server confirmation)`
+    )
   }
 }
 
@@ -1961,6 +2045,8 @@ function handleEvent(event: ClaudeEvent) {
           subagents: session.subagents,
           zone: session.zone,
           stats: session.stats,
+          stationStats: session.stationStats,
+          fileConstellation: session.fileConstellation,
         }
       : null,
   }
@@ -2041,6 +2127,16 @@ function handleEvent(event: ClaudeEvent) {
         hideQuestionModal()
       }
 
+      // Update visual file constellation for file-touching tools
+      if ((e.tool === 'Read' || e.tool === 'Write' || e.tool === 'Edit') && state.scene) {
+        const fileNode = session.fileConstellation.get(
+          (e.toolInput as { file_path?: string }).file_path || ''
+        )
+        if (fileNode) {
+          state.scene.fileConstellation.updateFile(event.sessionId, fileNode)
+        }
+      }
+
       updateStats()
       updateActivity(e.success ? `${e.tool} complete` : `${e.tool} failed`)
       break
@@ -2080,6 +2176,14 @@ function handleEvent(event: ClaudeEvent) {
       // Reset stats for this session
       session.stats.toolsUsed = 0
       session.stats.filesTouched.clear()
+
+      // Reset station stats and file constellation
+      session.stationStats = createEmptyStationStats()
+      session.fileConstellation.clear()
+      if (state.scene) {
+        state.scene.fileConstellation.clear(event.sessionId)
+      }
+
       updateStats()
       updateActivity('Session started')
       break
@@ -2829,6 +2933,7 @@ function init() {
   // Initialize feed manager
   state.feedManager = new FeedManager()
   state.feedManager.setupScrollButton()
+  state.feedManager.setupBashExpandHandlers()
 
   // Initialize replay controls
   state.replayControls = setupReplayControls({
@@ -2979,12 +3084,49 @@ function init() {
 
   // Handle managed sessions updates
   state.client.onSessions((sessions) => {
+    // Track old claudeSessionIds BEFORE clearing the link map
+    // This lets us detect when a session's claudeSessionId changes (e.g., after context clear)
+    const oldClaudeIdByManagedId = new Map<string, string>()
+    for (const [claudeId, managedId] of claudeToManagedLink) {
+      oldClaudeIdByManagedId.set(managedId, claudeId)
+    }
+
+    // Track which old IDs were migrated (don't orphan-clean them)
+    const migratedOldIds = new Set<string>()
+
     // Reconcile local link map with server's authoritative data
     // Server is the source of truth for session linking
     claudeToManagedLink.clear()
     for (const session of sessions) {
       if (session.claudeSessionId) {
         claudeToManagedLink.set(session.claudeSessionId, session.id)
+
+        // Check if this managed session's claudeSessionId changed (session continuity)
+        const oldClaudeId = oldClaudeIdByManagedId.get(session.id)
+        if (oldClaudeId && oldClaudeId !== session.claudeSessionId) {
+          // Session ID changed! Migrate the zone from old to new key
+          const oldSessionState = state.sessions.get(oldClaudeId)
+          const oldZone = state.scene?.zones.get(oldClaudeId)
+
+          if (oldSessionState && oldZone && state.scene) {
+            console.log(
+              `[Continuation] Migrating zone from ${oldClaudeId.slice(0, 8)} to ${session.claudeSessionId.slice(0, 8)} for "${session.name}"`
+            )
+
+            // Migrate session state to new key
+            state.sessions.delete(oldClaudeId)
+            state.sessions.set(session.claudeSessionId, oldSessionState)
+
+            // Migrate zone to new key (update internal ID and re-register)
+            state.scene.migrateZone(oldClaudeId, session.claudeSessionId)
+
+            // Mark old ID as migrated so we don't delete it as orphaned
+            migratedOldIds.add(oldClaudeId)
+
+            // Skip creating a new zone since we migrated the existing one
+            continue
+          }
+        }
 
         // Proactively create zone if it doesn't exist yet
         // This handles sessions that have no recent events in history
@@ -3030,6 +3172,8 @@ function init() {
               filesTouched: new Set(),
               activeSubagents: 0,
             },
+            stationStats: createEmptyStationStats(),
+            fileConstellation: new Map(),
           }
           state.sessions.set(session.claudeSessionId, sessionState)
 
@@ -3058,10 +3202,15 @@ function init() {
     }
 
     // Clean up orphaned zones (zones not linked to any managed session)
+    // Skip zones that were migrated during this update (they've already been handled)
     if (state.scene) {
       const activeClaudeIds = new Set(sessions.map((s) => s.claudeSessionId).filter(Boolean))
       const zonesToDelete: string[] = []
       for (const [zoneId] of state.scene.zones) {
+        // Skip if this zone was migrated to a new ID in this update cycle
+        if (migratedOldIds.has(zoneId)) {
+          continue
+        }
         if (!activeClaudeIds.has(zoneId)) {
           zonesToDelete.push(zoneId)
         }
@@ -3143,7 +3292,7 @@ function init() {
     }
   })
 
-  // Handle permission prompts and text tiles
+  // Handle permission prompts, text tiles, and bash output streaming
   state.client.onRawMessage((message) => {
     if (message.type === 'permission_prompt') {
       const { sessionId, tool, context, options } = message.payload as {
@@ -3161,6 +3310,16 @@ function init() {
       if (state.scene) {
         state.scene.setTextTiles(tiles)
       }
+    } else if (message.type === 'bash_output') {
+      // Real-time bash output streaming
+      const { toolUseId, lines, totalLines } =
+        message.payload as import('../shared/types').BashOutputMessage
+      state.feedManager?.updateBashOutput(toolUseId, lines, totalLines)
+    } else if (message.type === 'bash_complete') {
+      // Bash command completed - show final output
+      const { toolUseId, stdout, stderr, success } =
+        message.payload as import('../shared/types').BashCompleteMessage
+      state.feedManager?.finalizeBashOutput(toolUseId, stdout, stderr, success)
     }
   })
 
@@ -3269,6 +3428,9 @@ function init() {
   // Setup text label modal (for hex text labels)
   setupTextLabelModal()
 
+  // Setup station detail panel (for clickable station info)
+  setupStationDetailPanel()
+
   // Setup zone command modal (quick command input near zone)
   setupZoneCommandModal()
 
@@ -3365,3 +3527,16 @@ window.addEventListener('beforeunload', cleanup)
 
 // Export for debugging
 ;(window as unknown as { vibecraft: AppState }).vibecraft = state
+
+// Export for visual testing (deterministic screenshots)
+// Note: scene and client are initialized in init(), so initially null
+;(
+  window as unknown as { __vibecraft: { scene: typeof state.scene; client: typeof state.client } }
+).__vibecraft = {
+  get scene() {
+    return state.scene
+  },
+  get client() {
+    return state.client
+  },
+}
