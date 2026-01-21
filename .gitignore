@@ -30,6 +30,9 @@ npm-debug.log*
 
 # TypeScript cache
 *.tsbuildinfo
+
+# Rust build artifacts
+hooks/rust/target/
 *.png
 !public/og-image.png
 !public/multiclaude.png
