@@ -125,6 +125,7 @@ interface AppState {
   focusedSessionId: string | null // Currently focused session for camera/prompts
   eventHistory: ClaudeEvent[]
   managedSessions: ManagedSession[] // Managed sessions from server
+  archivedSessions: ManagedSession[] // Archived sessions (soft deleted)
   selectedManagedSession: string | null // Selected managed session ID for prompts
   serverCwd: string // Server's working directory
   attentionSystem: AttentionSystem | null // Manages attention queue and notifications
@@ -152,6 +153,7 @@ const state: AppState = {
   eventHistory: [],
   serverCwd: '~',
   managedSessions: [],
+  archivedSessions: [],
   selectedManagedSession: null,
   attentionSystem: null, // Initialized in init()
   timelineManager: null, // Initialized in init()
@@ -372,6 +374,82 @@ function renderManagedSessions(): void {
 }
 
 /**
+ * Render the archived sessions section (collapsed by default)
+ */
+function renderArchivedSection(): void {
+  const section = document.getElementById('archived-section')
+  const countEl = document.getElementById('archived-count')
+  const listEl = document.getElementById('archived-list')
+
+  if (!section || !countEl || !listEl) return
+
+  const count = state.archivedSessions.length
+  countEl.textContent = String(count)
+
+  // Hide section entirely if no archived sessions
+  if (count === 0) {
+    section.style.display = 'none'
+    return
+  }
+  section.style.display = ''
+
+  // Render archived session items
+  listEl.innerHTML = ''
+  state.archivedSessions.forEach((session) => {
+    const el = document.createElement('div')
+    el.className = 'archived-item'
+
+    // Time since archived
+    const archivedAgo = session.archivedAt ? formatTimeAgo(session.archivedAt) : 'recently'
+    const lastActiveAgo = session.lastActivity ? formatTimeAgo(session.lastActivity) : 'unknown'
+
+    el.innerHTML = `
+      <div class="archived-info">
+        <div class="archived-name">${escapeHtml(session.name)}</div>
+        <div class="archived-detail">Archived ${archivedAgo} · was active ${lastActiveAgo}</div>
+      </div>
+      <div class="archived-actions">
+        <button class="restore-btn" title="Restore session">↩️</button>
+        <button class="delete-btn" title="Delete permanently">🗑️</button>
+      </div>
+    `
+
+    // Restore button
+    el.querySelector('.restore-btn')?.addEventListener('click', async (e) => {
+      e.stopPropagation()
+      await unarchiveManagedSession(session.id)
+    })
+
+    // Delete button
+    el.querySelector('.delete-btn')?.addEventListener('click', async (e) => {
+      e.stopPropagation()
+      if (confirm(`Permanently delete "${session.name}"? This cannot be undone.`)) {
+        await deleteArchivedSession(session.id)
+      }
+    })
+
+    listEl.appendChild(el)
+  })
+}
+
+/**
+ * Setup archived section toggle behavior
+ */
+function setupArchivedSection(): void {
+  const section = document.getElementById('archived-section')
+  const header = section?.querySelector('.archived-header')
+  const toggle = section?.querySelector('.archived-toggle')
+
+  if (!section || !header || !toggle) return
+
+  header.addEventListener('click', () => {
+    const isCollapsed = section.dataset.collapsed === 'true'
+    section.dataset.collapsed = isCollapsed ? 'false' : 'true'
+    toggle.textContent = isCollapsed ? '▼' : '▶'
+  })
+}
+
+/**
  * Select a managed session for prompts (null = all/legacy mode)
  * Also focuses the 3D zone if available
  */
@@ -564,6 +642,46 @@ async function restartManagedSession(sessionId: string, sessionName: string): Pr
     }
   }
   // Update will be broadcast via WebSocket
+}
+
+/**
+ * Fetch and update archived sessions list
+ */
+async function fetchArchivedSessions(): Promise<void> {
+  const data = await sessionAPI.getArchivedSessions()
+  if (data.ok) {
+    state.archivedSessions = data.sessions
+    renderArchivedSection()
+  }
+}
+
+/**
+ * Unarchive (restore) an archived session
+ */
+async function unarchiveManagedSession(sessionId: string): Promise<void> {
+  const data = await sessionAPI.unarchiveSession(sessionId)
+  if (!data.ok) {
+    console.error('Failed to unarchive session:', data.error)
+    toast.error(`Failed to restore session: ${data.error}`)
+    return
+  }
+  toast.success('Session restored')
+  // Refresh archived list (main sessions will be broadcast via WebSocket)
+  await fetchArchivedSessions()
+}
+
+/**
+ * Permanently delete an archived session
+ */
+async function deleteArchivedSession(sessionId: string): Promise<void> {
+  const data = await sessionAPI.deleteSession(sessionId)
+  if (!data.ok) {
+    console.error('Failed to delete archived session:', data.error)
+    toast.error(`Failed to delete session: ${data.error}`)
+    return
+  }
+  // Refresh archived list
+  await fetchArchivedSessions()
 }
 
 /**
@@ -791,8 +909,14 @@ function setupManagedSessions(): void {
     })
   }
 
+  // Setup archived section toggle
+  setupArchivedSection()
+
   // Initial render
   renderManagedSessions()
+
+  // Fetch initial archived sessions
+  fetchArchivedSessions()
 }
 
 // ============================================================================
@@ -3253,6 +3377,9 @@ function init() {
 
     state.managedSessions = sessions
     renderManagedSessions()
+
+    // Refresh archived sessions list (in case sessions were archived/unarchived)
+    fetchArchivedSessions()
 
     // Sync zone labels with managed session names
     syncZoneLabels()

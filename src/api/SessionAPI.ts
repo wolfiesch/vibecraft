@@ -139,10 +139,7 @@ export function createSessionAPI(apiUrl: string) {
     /**
      * Send a prompt to a managed session
      */
-    async sendPrompt(
-      sessionId: string,
-      prompt: string
-    ): Promise<SimpleResponse> {
+    async sendPrompt(sessionId: string, prompt: string): Promise<SimpleResponse> {
       try {
         const response = await fetch(`${apiUrl}/sessions/${sessionId}/prompt`, {
           method: 'POST',
@@ -159,10 +156,7 @@ export function createSessionAPI(apiUrl: string) {
     /**
      * Link a Claude session ID to a managed session
      */
-    async linkSession(
-      managedId: string,
-      claudeSessionId: string
-    ): Promise<void> {
+    async linkSession(managedId: string, claudeSessionId: string): Promise<void> {
       try {
         await fetch(`${apiUrl}/sessions/${managedId}/link`, {
           method: 'POST',
@@ -202,6 +196,38 @@ export function createSessionAPI(apiUrl: string) {
         return await response.json()
       } catch (e) {
         console.error('Error creating implicit session:', e)
+        return { ok: false, error: 'Network error' }
+      }
+    },
+
+    /**
+     * Get archived sessions
+     */
+    async getArchivedSessions(): Promise<{
+      ok: boolean
+      sessions: ManagedSession[]
+      error?: string
+    }> {
+      try {
+        const response = await fetch(`${apiUrl}/sessions/archived`)
+        return await response.json()
+      } catch (e) {
+        console.error('Error fetching archived sessions:', e)
+        return { ok: false, sessions: [], error: 'Network error' }
+      }
+    },
+
+    /**
+     * Unarchive (restore) a session
+     */
+    async unarchiveSession(sessionId: string): Promise<SimpleResponse> {
+      try {
+        const response = await fetch(`${apiUrl}/sessions/${sessionId}/unarchive`, {
+          method: 'POST',
+        })
+        return await response.json()
+      } catch (e) {
+        console.error('Error unarchiving session:', e)
         return { ok: false, error: 'Network error' }
       }
     },

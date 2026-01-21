@@ -116,7 +116,12 @@ export interface UserPromptSubmitEvent extends BaseEvent {
 export interface NotificationEvent extends BaseEvent {
   type: 'notification'
   message: string
-  notificationType: 'permission_prompt' | 'idle_prompt' | 'auth_success' | 'elicitation_dialog' | string
+  notificationType:
+    | 'permission_prompt'
+    | 'idle_prompt'
+    | 'auth_success'
+    | 'elicitation_dialog'
+    | string
 }
 
 // ============================================================================
@@ -150,8 +155,38 @@ export type ClaudeEvent =
 
 /** Permission option (number + label) */
 export interface PermissionOption {
-  number: string   // "1", "2", "3"
-  label: string    // "Yes", "Yes, and always allow...", "No"
+  number: string // "1", "2", "3"
+  label: string // "Yes", "Yes, and always allow...", "No"
+}
+
+/** Bash output streaming message (real-time during command execution) */
+export interface BashOutputMessage {
+  type: 'bash_output'
+  /** Tool use ID from pre_tool_use event */
+  toolUseId: string
+  /** Claude session ID */
+  sessionId: string
+  /** New lines since last update */
+  lines: string[]
+  /** Total lines captured so far */
+  totalLines: number
+  /** Timestamp of capture */
+  timestamp: number
+}
+
+/** Bash command completion message */
+export interface BashCompleteMessage {
+  type: 'bash_complete'
+  /** Tool use ID from pre_tool_use event */
+  toolUseId: string
+  /** Claude session ID */
+  sessionId: string
+  /** Full stdout output */
+  stdout: string
+  /** Full stderr output */
+  stderr: string
+  /** Whether command succeeded */
+  success: boolean
 }
 
 /** Server -> Client messages */
@@ -160,12 +195,20 @@ export type ServerMessage =
   | { type: 'history'; payload: ClaudeEvent[] }
   | { type: 'connected'; payload: { sessionId: string } }
   | { type: 'error'; payload: { message: string } }
-  | { type: 'tokens'; payload: { session: string; sessionId?: string; current: number; cumulative: number } }
+  | {
+      type: 'tokens'
+      payload: { session: string; sessionId?: string; current: number; cumulative: number }
+    }
   | { type: 'sessions'; payload: ManagedSession[] }
   | { type: 'session_update'; payload: ManagedSession }
-  | { type: 'permission_prompt'; payload: { sessionId: string; tool: string; context: string; options: PermissionOption[] } }
+  | {
+      type: 'permission_prompt'
+      payload: { sessionId: string; tool: string; context: string; options: PermissionOption[] }
+    }
   | { type: 'permission_resolved'; payload: { sessionId: string } }
   | { type: 'text_tiles'; payload: TextTile[] }
+  | { type: 'bash_output'; payload: BashOutputMessage }
+  | { type: 'bash_complete'; payload: BashCompleteMessage }
 
 /** Client -> Server messages */
 export type ClientMessage =
@@ -182,22 +225,22 @@ export type ClientMessage =
 
 /** Represents Claude's current activity state */
 export type ClaudeState =
-  | 'idle'           // Waiting for user input
-  | 'thinking'       // Processing (between tools)
-  | 'working'        // Using a tool
-  | 'finished'       // Completed response
+  | 'idle' // Waiting for user input
+  | 'thinking' // Processing (between tools)
+  | 'working' // Using a tool
+  | 'finished' // Completed response
 
 /** Station/location in the 3D workshop */
 export type StationType =
-  | 'center'         // Default idle position
-  | 'bookshelf'      // Read
-  | 'desk'           // Write
-  | 'workbench'      // Edit
-  | 'terminal'       // Bash
-  | 'scanner'        // Grep/Glob
-  | 'antenna'        // WebFetch/WebSearch
-  | 'portal'         // Task (spawning subagents)
-  | 'taskboard'      // TodoWrite
+  | 'center' // Default idle position
+  | 'bookshelf' // Read
+  | 'desk' // Write
+  | 'workbench' // Edit
+  | 'terminal' // Bash
+  | 'scanner' // Grep/Glob
+  | 'antenna' // WebFetch/WebSearch
+  | 'portal' // Task (spawning subagents)
+  | 'taskboard' // TodoWrite
 
 /** Map tools to stations */
 export const TOOL_STATION_MAP: Record<ToolName, StationType> = {
@@ -266,6 +309,19 @@ export type SessionStatus = 'idle' | 'working' | 'waiting' | 'offline'
 /** Source of auto-detected project name */
 export type ProjectNameSource = 'package.json' | 'pyproject.toml' | 'git-remote' | 'directory'
 
+/** File stats entry (redacted path) */
+export interface FileStatsEntry {
+  path: string
+  count: number
+  lastSeen: number
+}
+
+/** File stats summary for a session */
+export interface SessionFileStats {
+  total: number
+  topFiles: FileStatsEntry[]
+}
+
 /** A managed Claude session */
 export interface ManagedSession {
   /** Our internal ID (UUID) */
@@ -293,6 +349,8 @@ export interface ManagedSession {
   }
   /** Git status for this session's working directory */
   gitStatus?: GitStatus
+  /** Aggregated file stats (redacted paths only) */
+  fileStats?: SessionFileStats
   /** Zone position in hex grid (for layout persistence) */
   zonePosition?: {
     q: number
@@ -304,6 +362,10 @@ export interface ManagedSession {
   projectSource?: ProjectNameSource
   /** Whether this is an implicit session (external Claude, no tmux control) */
   implicit?: boolean
+  /** Whether this session has been auto-archived (soft deleted) */
+  archived?: boolean
+  /** Timestamp when the session was archived */
+  archivedAt?: number
 }
 
 /** Git repository status */
@@ -362,9 +424,9 @@ export interface CreateSessionRequest {
   cwd?: string
   /** Claude command flags */
   flags?: {
-    continue?: boolean        // -c (continue last conversation)
-    skipPermissions?: boolean  // --dangerously-skip-permissions
-    chrome?: boolean        // --chrome
+    continue?: boolean // -c (continue last conversation)
+    skipPermissions?: boolean // --dangerously-skip-permissions
+    chrome?: boolean // --chrome
   }
 }
 
@@ -443,6 +505,154 @@ export interface UpdateTextTileRequest {
     r: number
   }
   color?: string
+}
+
+// ============================================================================
+// Station Statistics (for clickable station details)
+// ============================================================================
+
+/** File access record for bookshelf (Read) station */
+export interface FileAccess {
+  path: string
+  shortName: string // basename
+  timestamp: number
+  size?: number // bytes if available
+}
+
+/** File write record for desk (Write) station */
+export interface FileWrite {
+  path: string
+  shortName: string
+  timestamp: number
+  lines: number
+  success: boolean
+}
+
+/** File edit record for workbench (Edit) station */
+export interface FileEdit {
+  path: string
+  shortName: string
+  timestamp: number
+  linesAdded: number
+  linesRemoved: number
+  success: boolean
+}
+
+/** Command execution record for terminal (Bash) station */
+export interface CommandRun {
+  command: string
+  truncatedCommand: string // First 50 chars
+  timestamp: number
+  duration?: number // ms
+  exitCode?: number
+  success: boolean
+}
+
+/** Search query record for scanner (Grep/Glob) station */
+export interface SearchQuery {
+  pattern: string
+  tool: 'Grep' | 'Glob'
+  timestamp: number
+  matchCount?: number
+  fileCount?: number
+}
+
+/** Web request record for antenna (WebFetch/WebSearch) station */
+export interface WebRequest {
+  url: string
+  truncatedUrl: string // First 50 chars
+  tool: 'WebFetch' | 'WebSearch'
+  timestamp: number
+  duration?: number // ms
+  success: boolean
+  query?: string // Search query for WebSearch
+}
+
+/** Subagent spawn record for portal (Task) station */
+export interface SubagentSpawn {
+  toolUseId: string
+  description: string
+  subagentType: string
+  timestamp: number
+  endTimestamp?: number
+  duration?: number // ms (calculated when complete)
+  active: boolean
+}
+
+/** Todo update record for taskboard (TodoWrite) station */
+export interface TodoUpdate {
+  todos: Array<{
+    content: string
+    status: 'pending' | 'in_progress' | 'completed'
+  }>
+  timestamp: number
+}
+
+/** Per-station statistics for detail panels */
+export interface StationStats {
+  bookshelf: { files: FileAccess[] }
+  desk: { files: FileWrite[] }
+  workbench: { files: FileEdit[] }
+  terminal: { commands: CommandRun[] }
+  scanner: { searches: SearchQuery[] }
+  antenna: { requests: WebRequest[] }
+  portal: { subagents: SubagentSpawn[] }
+  taskboard: { todos: TodoUpdate[] }
+}
+
+/** Create empty station stats */
+export function createEmptyStationStats(): StationStats {
+  return {
+    bookshelf: { files: [] },
+    desk: { files: [] },
+    workbench: { files: [] },
+    terminal: { commands: [] },
+    scanner: { searches: [] },
+    antenna: { requests: [] },
+    portal: { subagents: [] },
+    taskboard: { todos: [] },
+  }
+}
+
+// ============================================================================
+// File Constellation Types
+// ============================================================================
+
+/** A file node in the constellation */
+export interface FileNode {
+  path: string // Full file path
+  shortName: string // Basename for display
+  directory: string // Parent directory for clustering
+
+  // Session-specific diff tracking (NOT git-based)
+  linesAdded: number // Total lines added THIS SESSION
+  linesRemoved: number // Total lines removed THIS SESSION
+
+  operations: FileOperation[]
+  lastTouched: number // Timestamp of most recent operation
+}
+
+/** Individual file operation */
+export interface FileOperation {
+  type: 'read' | 'write' | 'edit'
+  timestamp: number
+  linesAdded?: number
+  linesRemoved?: number
+}
+
+/** Directory cluster in constellation */
+export interface DirectoryCluster {
+  name: string // e.g., "src/"
+  files: FileNode[]
+  angle: number // Position around zone (radians)
+}
+
+/** Constellation state for a session */
+export interface ConstellationState {
+  sessionId: string
+  files: Map<string, FileNode>
+  clusters: Map<string, DirectoryCluster>
+  visible: boolean
 }
 
 // ============================================================================

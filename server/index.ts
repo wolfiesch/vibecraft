@@ -23,7 +23,7 @@ import {
 } from 'fs'
 import { exec, execFile } from 'child_process'
 import { dirname, resolve, join, extname } from 'path'
-import { hostname } from 'os'
+import { hostname, homedir } from 'os'
 import { randomUUID, randomBytes } from 'crypto'
 import { createClient, LiveTranscriptionEvents } from '@deepgram/sdk'
 import type { LiveClient } from '@deepgram/sdk'
@@ -92,6 +92,25 @@ function expandHome(path: string): string {
   return path
 }
 
+/** Redact a file path to remove user-specific home directories */
+function redactPath(rawPath: string): string {
+  if (!rawPath) return rawPath
+  if (rawPath.startsWith('~')) return rawPath
+
+  const homeDir = homedir()
+  if (homeDir && rawPath.startsWith(homeDir)) {
+    const remainder = rawPath.slice(homeDir.length)
+    if (!remainder) return '~'
+    return remainder.startsWith('/') ? `~${remainder}` : `~/${remainder}`
+  }
+
+  if (rawPath.startsWith('/Users/')) {
+    return rawPath.replace(/^\/Users\/[^/]+/, '~')
+  }
+
+  return rawPath
+}
+
 const PORT = parseInt(process.env.VIBECRAFT_PORT ?? String(DEFAULTS.SERVER_PORT), 10)
 const EVENTS_FILE = resolve(expandHome(process.env.VIBECRAFT_EVENTS_FILE ?? DEFAULTS.EVENTS_FILE))
 const PENDING_PROMPT_FILE = resolve(
@@ -106,6 +125,7 @@ const SESSIONS_FILE = resolve(
 const TILES_FILE = resolve(
   expandHome(process.env.VIBECRAFT_TILES_FILE ?? '~/.vibecraft/data/tiles.json')
 )
+const FILES_FILE = resolve(expandHome(process.env.VIBECRAFT_FILES_FILE ?? DEFAULTS.FILES_FILE))
 
 /** Time before a "working" session auto-transitions to idle (failsafe for missed events) */
 const WORKING_TIMEOUT_MS = 120_000 // 2 minutes
@@ -116,11 +136,23 @@ const MAX_BODY_SIZE = 1024 * 1024
 /** How often to check for stale "working" sessions */
 const WORKING_CHECK_INTERVAL_MS = 10_000 // 10 seconds
 
+/** How often to check for stale sessions to archive (5 minutes) */
+const ARCHIVE_CHECK_INTERVAL_MS = 300_000 // 5 minutes
+
+/** Time before an offline session is auto-archived (default: 1 hour) */
+const ARCHIVE_THRESHOLD_MS = Number(process.env.VIBECRAFT_ARCHIVE_AFTER_MS) || 3_600_000 // 1 hour
+
 /** How often to cleanup orphaned Map entries (60 seconds) */
 const CLEANUP_INTERVAL_MS = 60_000
 
 /** Max age for orphaned entries before cleanup (5 minutes) */
 const ORPHAN_MAX_AGE_MS = 5 * 60_000
+
+/** Debounce for file stats persistence (1 second) */
+const FILE_STATS_SAVE_DEBOUNCE_MS = 1000
+
+/** Max number of files to include in session payload */
+const FILE_STATS_TOP_N = 10
 
 /** Extended PATH for exec() - includes Homebrew and user paths for macOS/Linux */
 const HOME = process.env.HOME || ''
@@ -367,6 +399,16 @@ const managedSessions = new Map<string, ManagedSession>()
 
 /** Text tiles (grid labels) */
 const textTiles = new Map<string, TextTile>()
+
+/** File stats for managed sessions (redacted paths only) */
+interface FileStat {
+  count: number
+  lastSeen: number
+}
+const fileStatsBySession = new Map<string, Map<string, FileStat>>()
+let fileStatsDirty = false
+let fileStatsSaveTimeout: ReturnType<typeof setTimeout> | null = null
+let fileStatsBroadcastPending = false
 
 /** Git status tracker for managed sessions */
 const gitStatusManager = new GitStatusManager()
@@ -1171,11 +1213,30 @@ function createImplicitSession(options: CreateImplicitSessionRequest): ManagedSe
 /**
  * Get all managed sessions
  */
-function getSessions(): ManagedSession[] {
-  return Array.from(managedSessions.values()).map((session) => ({
-    ...session,
-    gitStatus: gitStatusManager.getStatus(session.id) ?? undefined,
-  }))
+function getSessions(includeArchived = false): ManagedSession[] {
+  return Array.from(managedSessions.values())
+    .filter((s) => includeArchived || !s.archived)
+    .map((session) => {
+      const gitStatus = gitStatusManager.getStatus(session.id) ?? undefined
+      const fileStats = buildFileStatsSummary(session.id)
+      return {
+        ...session,
+        gitStatus,
+        ...(fileStats ? { fileStats } : {}),
+      }
+    })
+}
+
+/**
+ * Get only archived sessions
+ */
+function getArchivedSessions(): ManagedSession[] {
+  return Array.from(managedSessions.values())
+    .filter((s) => s.archived === true)
+    .map((session) => ({
+      ...session,
+      gitStatus: gitStatusManager.getStatus(session.id) ?? undefined,
+    }))
 }
 
 /**
@@ -1221,6 +1282,9 @@ function deleteSession(id: string): Promise<boolean> {
       tmuxToManagedMap.delete(session.tmuxSession)
       managedSessions.delete(id)
       gitStatusManager.untrack(id)
+      if (fileStatsBySession.delete(id)) {
+        scheduleFileStatsPersist()
+      }
       // Clean up mapping
       for (const [claudeId, managedId] of claudeToManagedMap) {
         if (managedId === id) {
@@ -1369,6 +1433,57 @@ function checkWorkingTimeout(): void {
 }
 
 /**
+ * Auto-archive sessions that have been offline for too long.
+ * Only archives sessions with status='offline' that haven't been active
+ * for longer than ARCHIVE_THRESHOLD_MS.
+ */
+function checkAndArchiveStaleSessions(): void {
+  const now = Date.now()
+  let changed = false
+
+  for (const session of managedSessions.values()) {
+    // Skip already archived sessions
+    if (session.archived) continue
+    // Only archive offline sessions (not idle/working/waiting)
+    if (session.status !== 'offline') continue
+    // Don't archive sessions waiting for continuation (context clear window)
+    if (session.cwd && pendingContinuations.has(session.cwd)) continue
+
+    const inactiveTime = now - session.lastActivity
+    if (inactiveTime >= ARCHIVE_THRESHOLD_MS) {
+      session.archived = true
+      session.archivedAt = now
+      changed = true
+      log(
+        `Auto-archived session "${session.name}" (inactive for ${Math.round(inactiveTime / 60000)} min)`
+      )
+    }
+  }
+
+  if (changed) {
+    saveSessions()
+    broadcastSessions()
+  }
+}
+
+/**
+ * Unarchive a session (restore from archived state)
+ */
+function unarchiveSession(id: string): ManagedSession | null {
+  const session = managedSessions.get(id)
+  if (!session) return null
+
+  session.archived = false
+  session.archivedAt = undefined
+  session.lastActivity = Date.now() // Reset activity to prevent immediate re-archive
+
+  log(`Unarchived session: ${session.name} (${id.slice(0, 8)})`)
+  saveSessions()
+  broadcastSessions()
+  return session
+}
+
+/**
  * Clean up orphaned Map entries to prevent memory leaks.
  * Removes entries from pendingToolUses and activeBashTools
  * that are older than ORPHAN_MAX_AGE_MS.
@@ -1483,6 +1598,146 @@ function broadcastSessions(): void {
     type: 'sessions',
     payload: getSessions(),
   })
+}
+
+// ============================================================================
+// File Stats (Files Touched)
+// ============================================================================
+
+function buildFileStatsSummary(managedSessionId: string) {
+  const stats = fileStatsBySession.get(managedSessionId)
+  if (!stats || stats.size === 0) return undefined
+
+  const entries = Array.from(stats.entries()).map(([path, data]) => ({
+    path,
+    count: data.count,
+    lastSeen: data.lastSeen,
+  }))
+
+  entries.sort((a, b) => b.lastSeen - a.lastSeen)
+
+  return {
+    total: stats.size,
+    topFiles: entries.slice(0, FILE_STATS_TOP_N),
+  }
+}
+
+function updateFileStatsForToolEvent(
+  event: PreToolUseEvent | PostToolUseEvent,
+  managedSessionId: string
+): void {
+  if (event.tool !== 'Read' && event.tool !== 'Write' && event.tool !== 'Edit') {
+    return
+  }
+
+  const filePath = (event.toolInput as { file_path?: unknown }).file_path
+  if (typeof filePath !== 'string' || !filePath.trim()) {
+    return
+  }
+
+  const redactedPath = redactPath(filePath.trim())
+  if (!redactedPath) {
+    return
+  }
+
+  let sessionStats = fileStatsBySession.get(managedSessionId)
+  if (!sessionStats) {
+    sessionStats = new Map()
+    fileStatsBySession.set(managedSessionId, sessionStats)
+  }
+
+  const existing = sessionStats.get(redactedPath)
+  if (existing) {
+    existing.count += 1
+    existing.lastSeen = Math.max(existing.lastSeen, event.timestamp)
+  } else {
+    sessionStats.set(redactedPath, {
+      count: 1,
+      lastSeen: event.timestamp,
+    })
+  }
+
+  scheduleFileStatsPersist()
+}
+
+function scheduleFileStatsPersist(): void {
+  fileStatsDirty = true
+  fileStatsBroadcastPending = true
+  if (fileStatsSaveTimeout) return
+
+  fileStatsSaveTimeout = setTimeout(() => {
+    fileStatsSaveTimeout = null
+
+    if (fileStatsDirty) {
+      saveFileStats()
+      fileStatsDirty = false
+    }
+
+    if (fileStatsBroadcastPending) {
+      broadcastSessions()
+      fileStatsBroadcastPending = false
+    }
+  }, FILE_STATS_SAVE_DEBOUNCE_MS)
+}
+
+function saveFileStats(): void {
+  try {
+    const sessions: Record<string, Record<string, FileStat>> = {}
+    for (const [sessionId, stats] of fileStatsBySession) {
+      const entries: Record<string, FileStat> = {}
+      for (const [path, data] of stats) {
+        entries[path] = { count: data.count, lastSeen: data.lastSeen }
+      }
+      if (Object.keys(entries).length > 0) {
+        sessions[sessionId] = entries
+      }
+    }
+
+    writeFileSync(FILES_FILE, JSON.stringify({ sessions }, null, 2))
+    debug(`Saved file stats for ${Object.keys(sessions).length} sessions to ${FILES_FILE}`)
+  } catch (e) {
+    console.error('Failed to save file stats:', e)
+  }
+}
+
+function loadFileStats(): void {
+  if (!existsSync(FILES_FILE)) {
+    debug('No saved files file found')
+    return
+  }
+
+  try {
+    const content = readFileSync(FILES_FILE, 'utf-8')
+    const data = JSON.parse(content) as {
+      sessions?: Record<string, Record<string, FileStat>>
+    }
+
+    if (data.sessions) {
+      for (const [sessionId, stats] of Object.entries(data.sessions)) {
+        const sessionStats = new Map<string, FileStat>()
+        for (const [path, stat] of Object.entries(stats)) {
+          if (!stat || typeof stat.count !== 'number' || typeof stat.lastSeen !== 'number') {
+            continue
+          }
+          sessionStats.set(path, {
+            count: stat.count,
+            lastSeen: stat.lastSeen,
+          })
+        }
+        if (sessionStats.size > 0) {
+          fileStatsBySession.set(sessionId, sessionStats)
+        }
+      }
+    }
+
+    log(`Loaded file stats for ${fileStatsBySession.size} sessions from ${FILES_FILE}`)
+  } catch (e) {
+    logger.error('file', 'Failed to load files file', {
+      path: FILES_FILE,
+      error: String(e),
+    })
+    // Continue with empty stats rather than crashing
+  }
 }
 
 // ============================================================================
@@ -1804,6 +2059,10 @@ function addEvent(event: ClaudeEvent) {
   // Update managed session status based on event
   const managedSession = findManagedSession(event.sessionId)
   if (managedSession) {
+    if (event.type === 'pre_tool_use' || event.type === 'post_tool_use') {
+      updateFileStatsForToolEvent(event as PreToolUseEvent | PostToolUseEvent, managedSession.id)
+    }
+
     const prevStatus = managedSession.status
     managedSession.lastActivity = Date.now() // Use current time for accurate timeout tracking
     managedSession.cwd = event.cwd
@@ -2271,6 +2530,13 @@ function handleHttpRequest(req: IncomingMessage, res: ServerResponse) {
     return
   }
 
+  // Get archived sessions
+  if (req.method === 'GET' && req.url === '/sessions/archived') {
+    res.writeHead(200, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({ ok: true, sessions: getArchivedSessions() }))
+    return
+  }
+
   // Create an implicit session (external Claude, no tmux control)
   if (req.method === 'POST' && req.url === '/sessions/implicit') {
     collectRequestBody(req)
@@ -2615,6 +2881,25 @@ function handleHttpRequest(req: IncomingMessage, res: ServerResponse) {
         })
       return
     }
+
+    // POST /sessions/:id/unarchive - Restore an archived session
+    if (req.method === 'POST' && action === 'unarchive') {
+      const session = getSession(sessionId)
+      if (!session) {
+        res.writeHead(404, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ ok: false, error: 'Session not found' }))
+        return
+      }
+      if (!session.archived) {
+        res.writeHead(400, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ ok: false, error: 'Session is not archived' }))
+        return
+      }
+      const updated = unarchiveSession(sessionId)
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ ok: true, session: updated }))
+      return
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -2819,6 +3104,9 @@ function main() {
   // Load saved text tiles
   loadTiles()
 
+  // Load saved file stats (redacted paths only)
+  loadFileStats()
+
   // Start git status tracking
   gitStatusManager.setUpdateHandler(({ sessionId, status }) => {
     const session = managedSessions.get(sessionId)
@@ -2957,6 +3245,9 @@ function main() {
 
     // Start orphaned entry cleanup (every 60 seconds)
     setInterval(cleanupOrphanedEntries, CLEANUP_INTERVAL_MS)
+
+    // Start stale session archiving (every 5 minutes)
+    setInterval(checkAndArchiveStaleSessions, ARCHIVE_CHECK_INTERVAL_MS)
 
     // Run initial health check to update session statuses
     checkSessionHealth()
