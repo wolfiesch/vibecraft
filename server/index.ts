@@ -16,7 +16,7 @@ import { readFileSync, writeFileSync, existsSync, appendFileSync, mkdirSync, unl
 import { exec, execFile } from 'child_process'
 import { dirname, resolve, join, extname } from 'path'
 import { hostname } from 'os'
-import { randomUUID, randomBytes } from 'crypto'
+import { randomUUID, randomBytes, timingSafeEqual } from 'crypto'
 import { createClient, LiveTranscriptionEvents } from '@deepgram/sdk'
 import type { LiveClient } from '@deepgram/sdk'
 import type {
@@ -80,6 +80,7 @@ function expandHome(path: string): string {
 }
 
 const PORT = parseInt(process.env.VIBECRAFT_PORT ?? String(DEFAULTS.SERVER_PORT), 10)
+const BIND_HOST = process.env.VIBECRAFT_BIND_HOST ?? process.env.VIBECRAFT_HOST ?? '127.0.0.1'
 const EVENTS_FILE = resolve(expandHome(process.env.VIBECRAFT_EVENTS_FILE ?? DEFAULTS.EVENTS_FILE))
 const PENDING_PROMPT_FILE = resolve(expandHome(process.env.VIBECRAFT_PROMPT_FILE ?? '~/.vibecraft/data/pending-prompt.txt'))
 const MAX_EVENTS = parseInt(process.env.VIBECRAFT_MAX_EVENTS ?? String(DEFAULTS.MAX_EVENTS), 10)
@@ -87,6 +88,11 @@ const DEBUG = process.env.VIBECRAFT_DEBUG === 'true'
 const TMUX_SESSION = process.env.VIBECRAFT_TMUX_SESSION ?? DEFAULTS.TMUX_SESSION
 const SESSIONS_FILE = resolve(expandHome(process.env.VIBECRAFT_SESSIONS_FILE ?? DEFAULTS.SESSIONS_FILE))
 const TILES_FILE = resolve(expandHome(process.env.VIBECRAFT_TILES_FILE ?? '~/.vibecraft/data/tiles.json'))
+const AUTH_TOKEN = process.env.VIBECRAFT_AUTH_TOKEN?.trim() ?? ''
+const ALLOWED_ORIGINS = (process.env.VIBECRAFT_ALLOWED_ORIGINS ?? '')
+  .split(',')
+  .map(origin => origin.trim())
+  .filter(Boolean)
 
 /** Time before a "working" session auto-transitions to idle (failsafe for missed events) */
 const WORKING_TIMEOUT_MS = 120_000 // 2 minutes
@@ -117,23 +123,134 @@ const DEEPGRAM_MODEL = 'nova-2'
 const DEEPGRAM_LANGUAGE = 'en'
 
 /**
- * Validate WebSocket origin header to prevent CSRF attacks.
- * Only browser clients should connect, so we require a valid origin.
+ * Local-control security helpers.
+ *
+ * Vibecraft can start Claude sessions and send prompts into tmux, so the
+ * server defaults to loopback-only and remote binds require explicit auth.
+ */
+function normalizeHost(host: string): string {
+  return host.trim().toLowerCase().replace(/^\[|\]$/g, '')
+}
+
+function isLoopbackHost(host: string): boolean {
+  const normalized = normalizeHost(host)
+  return normalized === 'localhost' || normalized === '127.0.0.1' || normalized === '::1'
+}
+
+function isLoopbackAddress(address: string | undefined): boolean {
+  if (!address) return false
+  const normalized = normalizeHost(address)
+  return (
+    normalized === 'localhost' ||
+    normalized === '127.0.0.1' ||
+    normalized === '::1' ||
+    normalized === '::ffff:127.0.0.1'
+  )
+}
+
+function hasRemoteBind(): boolean {
+  const normalized = normalizeHost(BIND_HOST)
+  return normalized === '0.0.0.0' || normalized === '::' || !isLoopbackHost(BIND_HOST)
+}
+
+function isLocalDevRequest(req: IncomingMessage): boolean {
+  return isLoopbackHost(BIND_HOST) && isLoopbackAddress(req.socket.remoteAddress)
+}
+
+function getRequestPath(req: IncomingMessage): string {
+  return req.url?.split('?')[0] ?? '/'
+}
+
+function hasValidAuthToken(token: string | undefined): boolean {
+  if (!AUTH_TOKEN || !token) return false
+
+  const expected = Buffer.from(AUTH_TOKEN)
+  const received = Buffer.from(token)
+  return expected.length === received.length && timingSafeEqual(expected, received)
+}
+
+function bearerToken(req: IncomingMessage): string | undefined {
+  const header = req.headers.authorization
+  if (!header) return undefined
+  const match = header.match(/^Bearer\s+(.+)$/i)
+  return match?.[1]?.trim()
+}
+
+function requestToken(req: IncomingMessage): string | undefined {
+  const headerToken = req.headers['x-vibecraft-auth']
+  if (typeof headerToken === 'string' && headerToken.trim()) {
+    return headerToken.trim()
+  }
+
+  const authHeaderToken = bearerToken(req)
+  if (authHeaderToken) return authHeaderToken
+
+  try {
+    const url = new URL(req.url ?? '/', 'http://localhost')
+    return url.searchParams.get('token')?.trim() || undefined
+  } catch {
+    return undefined
+  }
+}
+
+function isAuthenticated(req: IncomingMessage): boolean {
+  return hasValidAuthToken(requestToken(req))
+}
+
+function isControlHttpRequest(req: IncomingMessage): boolean {
+  const method = req.method ?? 'GET'
+  const path = getRequestPath(req)
+  const apiPrefixes = [
+    '/event',
+    '/prompt',
+    '/tmux-output',
+    '/cancel',
+    '/info',
+    '/sessions',
+    '/projects',
+    '/tiles',
+    '/config',
+    '/stats',
+  ]
+
+  if (method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS') {
+    return true
+  }
+
+  // Remote API reads can expose local Claude/tmux state, cwd, or project paths.
+  return apiPrefixes.some(prefix => path === prefix || path.startsWith(`${prefix}/`))
+}
+
+function requiresAuth(req: IncomingMessage): boolean {
+  return isControlHttpRequest(req) && !isLocalDevRequest(req)
+}
+
+function writeJson(res: ServerResponse, status: number, body: Record<string, unknown>): void {
+  res.writeHead(status, { 'Content-Type': 'application/json' })
+  res.end(JSON.stringify(body))
+}
+
+/**
+ * Validate browser origins to prevent CSRF attacks.
  */
 function isOriginAllowed(origin: string | undefined): boolean {
-  // Require origin header - only browsers send this
-  if (!origin) return false
+  // Non-browser clients such as hooks and curl usually omit Origin.
+  if (!origin) return true
 
   try {
     const url = new URL(origin)
 
-    // Allow any port on localhost/127.0.0.1 (local development)
-    if (url.hostname === 'localhost' || url.hostname === '127.0.0.1') {
+    // Allow any port on loopback (local development)
+    if (isLoopbackHost(url.hostname)) {
       return true
     }
 
     // Production: exact hostname match with HTTPS required
     if (url.hostname === 'vibecraft.sh' && url.protocol === 'https:') {
+      return true
+    }
+
+    if (ALLOWED_ORIGINS.includes(origin)) {
       return true
     }
 
@@ -1475,22 +1592,33 @@ function handleClientMessage(ws: WebSocket, message: ClientMessage) {
 function handleHttpRequest(req: IncomingMessage, res: ServerResponse) {
   const origin = req.headers.origin
 
+  if (!isOriginAllowed(origin)) {
+    res.writeHead(403, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({ error: 'Origin not allowed' }))
+    return
+  }
+
   // CORS headers - only allow specific origins
-  if (origin && isOriginAllowed(origin)) {
+  if (origin) {
     res.setHeader('Access-Control-Allow-Origin', origin)
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS')
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS')
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Vibecraft-Auth')
   }
 
   if (req.method === 'OPTIONS') {
     // Preflight: reject if origin not allowed
-    if (!origin || !isOriginAllowed(origin)) {
+    if (!origin) {
       res.writeHead(403)
       res.end()
       return
     }
     res.writeHead(204)
     res.end()
+    return
+  }
+
+  if (requiresAuth(req) && !isAuthenticated(req)) {
+    writeJson(res, 401, { error: 'Authentication required' })
     return
   }
 
@@ -2211,6 +2339,18 @@ function serveStaticFile(req: IncomingMessage, res: ServerResponse): void {
 function main() {
   log('Starting Vibecraft server...')
 
+  if (hasRemoteBind() && !AUTH_TOKEN) {
+    console.error(
+      `Refusing to bind to ${BIND_HOST}:${PORT} without VIBECRAFT_AUTH_TOKEN. ` +
+      `Set a random bearer token or bind to 127.0.0.1 for local-only use.`
+    )
+    process.exit(1)
+  }
+  if (hasRemoteBind() && AUTH_TOKEN.length < 16) {
+    console.error('Refusing remote bind: VIBECRAFT_AUTH_TOKEN must be at least 16 characters.')
+    process.exit(1)
+  }
+
   // Load Deepgram API key for voice transcription
   deepgramApiKey = loadDeepgramKey()
 
@@ -2249,6 +2389,12 @@ function main() {
     if (!isOriginAllowed(origin)) {
       log(`Rejected WebSocket connection from origin: ${origin}`)
       ws.close(1008, 'Origin not allowed')
+      return
+    }
+
+    if (!isLocalDevRequest(req) && !isAuthenticated(req)) {
+      log(`Rejected WebSocket connection without valid auth token from ${req.socket.remoteAddress}`)
+      ws.close(1008, 'Authentication required')
       return
     }
 
@@ -2321,8 +2467,8 @@ function main() {
     })
   })
 
-  httpServer.listen(PORT, () => {
-    log(`Server running on port ${PORT}`)
+  httpServer.listen(PORT, BIND_HOST, () => {
+    log(`Server running on ${BIND_HOST}:${PORT}`)
     log(``)
     log(`Open https://vibecraft.sh to view your workshop`)
     log(``)
