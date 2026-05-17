@@ -78,6 +78,7 @@ VIBECRAFT_DATA_DIR="${VIBECRAFT_DATA_DIR:-$HOME/.vibecraft/data}"
 EVENTS_FILE="${VIBECRAFT_EVENTS_FILE:-$VIBECRAFT_DATA_DIR/events.jsonl}"
 WS_NOTIFY_URL="${VIBECRAFT_WS_NOTIFY:-http://localhost:4003/event}"
 ENABLE_WS_NOTIFY="${VIBECRAFT_ENABLE_WS_NOTIFY:-true}"
+AUTH_TOKEN="${VIBECRAFT_AUTH_TOKEN:-}"
 
 # Ensure data directory exists
 mkdir -p "$(dirname "$EVENTS_FILE")"
@@ -373,12 +374,22 @@ echo "$event" >> "$EVENTS_FILE"
 
 # Notify WebSocket server (fire and forget, don't block Claude)
 if [ "$ENABLE_WS_NOTIFY" = "true" ] && [ -n "$CURL" ]; then
-  "$CURL" -s -X POST "$WS_NOTIFY_URL" \
-    -H "Content-Type: application/json" \
-    -d "$event" \
-    --connect-timeout 1 \
-    --max-time 2 \
-    >/dev/null 2>&1 &
+  if [ -n "$AUTH_TOKEN" ]; then
+    "$CURL" -s -X POST "$WS_NOTIFY_URL" \
+      -H "Content-Type: application/json" \
+      -H "Authorization: Bearer $AUTH_TOKEN" \
+      -d "$event" \
+      --connect-timeout 1 \
+      --max-time 2 \
+      >/dev/null 2>&1 &
+  else
+    "$CURL" -s -X POST "$WS_NOTIFY_URL" \
+      -H "Content-Type: application/json" \
+      -d "$event" \
+      --connect-timeout 1 \
+      --max-time 2 \
+      >/dev/null 2>&1 &
+  fi
 fi
 
 exit 0
